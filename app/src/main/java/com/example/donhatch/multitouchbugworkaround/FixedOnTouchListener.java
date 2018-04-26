@@ -32,6 +32,7 @@
 //      twice or more, while 0-id is still in its down position.
 // Q: what other changes are happening that I'm not tracking, and can I use them to characterize?
 //    - pressure? size? axis? blah blah blah
+//    - AXIS_HAT_X? AXIS_RELATIVE_X?
 // Q: can the bug affect a *UP? or just moves?
 // CONJECTURES:
 //  - when it begins, it is always the case that:
@@ -48,8 +49,8 @@
 //  - it's its *next* distinct position (after possible repeats of current) (FALSE-- can be 2 after, maybe even more, I'm not sure)
 //  - the first occurrence of the bad non-0-id value (which doesn't need to be corrected there) is at the end of the first MOVE packet after the POINTER_DOWN(0); and that packet always contains one additional history not equal to the stuck value. (what if that pointer isn't moving, you may ask?  well in that case the bug doesn't happen!)
 //      Wait that's false-- that one historical can have the same value.
-//  - smoking gun: if size,pressure are same as previous but x,y are *not* same as previous, then x,y very likely *should* be same as previous.
-//    on the other hand, if size,pressure are *not* same as previous, then this particular x,y isn't being affected by the bug.
+//  - smoking gun: if size,pressure are same as previous but x,y are *not* same as previous, then x,y very likely *should* be same as previous (corrected)
+//    on the other hand, if size,pressure are *not* same as previous (corrected), then this particular x,y isn't being affected by the bug.
 /*
 3.614  805/997:                  {1}                             1: 2492.13,711.506,1.50000,0.323242
 3.617  806/997:           MOVE   {1}                             1: 2490.36,711.062,1.50000,0.323242
@@ -61,6 +62,29 @@
 3.639  812/997:                  {0, 1}     0:(2363.18,1045.27,0.600000,0.162598)A  1:(2483.14,708.508,1.50000,0.317383)E
 3.639  813/997:           MOVE   {0, 1}     0:(2363.18,1045.27,0.600000,0.162598)A  1: 2479.14,706.509,1.48750,0.314941
 3.648  814/997:                  {0, 1}     0:(2363.18,1045.27,0.612500,0.166504)A  1: 2483.14,708.508,1.48750,0.314941 E
+*/
+//    ARGH! here is a counterexample:  size,pressure not same as previous,  but x,y *should* be corrected to previous corrected.
+/*
+1.567  338/368:           MOVE   {0, 1}  0: 811.718201,661.540588,1.11250007,0.239746094,-1.57079637 A?  1: 1434.50195,491.658569,1.20000005,0.250976563,-1.57079637
+1.575  339/368:           MOVE   {0, 1}  0: 832.710876,1000.30536,1.11250007,0.238769531,-1.57079637     1: 1474.48804,435.697418,1.20000005,0.250976563,-1.57079637 B?
+1.584  340/368:                  {0, 1}  0: 833.710510,1000.30536,1.11250007,0.238769531,-1.57079637     1:(1474.48804,435.697418,1.20000005,0.250976563,-1.57079637)B
+1.584  341/368:           MOVE   {0, 1}  0: 811.718201,661.540588,1.11250007,0.238769531,-1.57079637 A?  1: 1434.50195,492.657867,1.20000005,0.250976563,-1.57079637
+1.592  342/368:                  {0, 1}  0: 834.710205,1000.30536,1.11250007,0.238769531,-1.57079637     1: 1474.48804,435.697418,1.20000005,0.250976563,-1.57079637 B?
+1.592  343/368:           MOVE   {0, 1}  0: 811.718201,661.540588,1.11250007,0.238769531,-1.57079637 A?  1: 1434.50195,493.657166,1.20000005,0.250976563,-1.57079637
+1.601  344/368:           MOVE   {0, 1}  0: 835.709839,1001.30463,1.11250007,0.238769531,-1.57079637     1: 1474.48804,435.697418,1.20000005,0.250976563,-1.57079637 B?
+1.609  345/368:           MOVE   {0, 1}  0: 811.718201,661.540588,1.11250007,0.238769531,-1.57079637 A?  1: 1434.50195,494.656494,1.20000005,0.251953125,-1.57079637
+1.617  346/368:           MOVE   {0, 1}  0:(811.718201,661.540588,1.11250007,0.237792969,-1.57079637)A   1: 1474.48804,435.697418,1.20000005,0.251953125,-1.57079637 B?
+1.634  347/368:           MOVE   {0, 1}  0: 836.709473,1001.30463,1.11250007,0.237792969,-1.57079637     1:(1474.48804,435.697418,1.20000005,0.251953125,-1.57079637)B
+1.642  348/368:                  {0, 1}  0: 811.718201,661.540588,1.11250007,0.237304688,-1.57079637 A   1:(1474.48804,435.697418,1.20000005,0.251953125,-1.57079637)B
+1.642  349/368:           MOVE   {0, 1}  0:(811.718201,661.540588,1.11250007,0.237304688,-1.57079637)A   1: 1434.50195,495.655792,1.20000005,0.251953125,-1.57079637
+1.667  350/368:           MOVE   {0, 1}  0:(811.718201,661.540588,1.10000002,0.237304688,-1.57079637)A   1: 1474.48804,435.697418,1.20000005,0.251953125,-1.57079637 B?
+1.676  351/368:                  {0, 1}  0:(811.718201,661.540588,1.10000002,0.237304688,-1.57079637)A   1:(1474.48804,435.697418,1.20000005,0.251953125,-1.57079637)B
+1.676  352/368:           MOVE   {0, 1}  0:(811.718201,661.540588,1.10000002,0.237304688,-1.57079637)A   1:(1474.48804,435.697418,1.20000005,0.251953125,-1.57079637)B
+1.684  353/368:           MOVE   {0, 1}  0:(811.718201,661.540588,1.10000002,0.237304688,-1.57079637)A   1: 1435.50159,495.655792,1.20000005,0.251953125,-1.57079637
+1.701  354/368:           MOVE   {0, 1}  0: 837.709167,1001.30463,1.10000002,0.236328125,-1.57079637     1: 1474.48804,435.697418,1.20000005,0.251953125,-1.57079637 B?
+1.709  355/368:           MOVE   {0, 1}  0: 838.708801,1001.30463,1.10000002,0.236328125,-1.57079637     1:(1474.48804,435.697418,1.20000005,0.251953125,-1.57079637)B
+1.718  356/368:           MOVE   {0, 1}  0: 840.708130,1001.30463,1.10000002,0.235351563,-1.57079637     1:(1474.48804,435.697418,1.20000005,0.251953125,-1.57079637)B
+1.726  357/368:           MOVE   {0, 1}  0: 842.707397,1001.30463,1.08749998,0.234375000,-1.57079637     1:(1474.48804,435.697418,1.20000005,0.251953125,-1.57079637)B
 */
 //  - every time it gives a bad (stuck) x,y, the *correct* value is the *previous* x,y.
 //    the current size,pressure are always (correctly) the same as th size,pressure
@@ -84,12 +108,36 @@
 2.640  523/574:                  {1}                          1: 2193.23853,510.645386,1.47500002,0.258789063,-1.57079637
 2.648  524/574:           MOVE   {1}                          1: 2193.23853,510.177124,1.47500002,0.258789063,-1.57079637
 */
+//  - first appearance of wrongness is always in idNonzero, always during the initial static x,y of id0 on its POINTER_DOWN
+//  - when the bug happens, idNonzero's x,y always:
+//      - starts at anchor, maybe stays there a while with same pressure&size, goes to 1 other value (same or diff p&s), immediately comes back to anchor with same p&s as prev.
+// WRONG. counterexample:
+/*
+1.245  242/354:           MOVE   {1}                                                         1: 2491.13501,805.440674,1.57500005,0.319824219
+1.254  243/354:  POINTER_DOWN(0) {0, 1}  0: 2131.26001,1080.24976,0.937500000,0.218261719 A!  1:(2491.13501,805.440674,1.57500005,0.319824219)
+1.254  244/354:                  {0, 1}  0:(2131.26001,1080.24976,0.937500000,0.218261719)A   1: 2490.13550,807.439270,1.56250000,0.318359375
+1.258  245/354:           MOVE   {0, 1}  0:(2131.26001,1080.24976,0.937500000,0.218261719)A   1: 2489.63574,808.438599,1.56250000,0.318359375 A!
+1.262  246/354:                  {0, 1}  0:(2131.26001,1080.24976,0.937500000,0.219238281)A   1:(2489.63574,808.438599,1.56250000,0.318359375)A?
+1.262  247/354:                  {0, 1}  0:(2131.26001,1080.24976,0.937500000,0.219238281)A   1: 2490.13550,808.438599,1.55000007,0.317382813
+1.271  248/354:           MOVE   {0, 1}  0:(2131.26001,1080.24976,0.937500000,0.219238281)A   1: 2489.13574,810.437195,1.53750002,0.315917969
+1.279  249/354:                  {0, 1}  0:(2131.26001,1080.24976,0.949999988,0.221191406)A   1: 2489.63574,808.438599,1.53750002,0.315917969 A?
+1.279  250/354:                  {0, 1}  0:(2131.26001,1080.24976,0.949999988,0.221191406)A   1: 2489.13574,812.435791,1.53750002,0.314941406
+1.288  251/354:                  {0, 1}  0:(2131.26001,1080.24976,0.949999988,0.222167969)A   1: 2489.63574,808.438599,1.53750002,0.314941406 A?
+*/
+//
 // Correlation with timestamp:
 //      - on id 0, when it affects x,y, timestamp has typically *not* advanced, but once in a while it has advanced (not consistent)
 //      - on id non-0, when it affects x,y, timestamp has typically (I think maybe always?)  advanced by 8 or 9 ms
 //        (except when it happened on 0's POINTER_UP, in which case there was no time-advace. argh!), in which case there was no time-advace. argh!)
 // Correlation with packet boundaries:
 //      - none.
+//
+// * HOW DO I WRAP THIS UP?
+//   Need a heuristic that always works in practice.
+//   It'll include things like:
+//   - consider things safe again N ms (or N events?) after id0 or idnonzero went up
+
+// 
 //
 
 package com.example.donhatch.multitouchbugworkaround;
@@ -341,12 +389,13 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         idsWidth = Math.max(idsWidth, STRINGIFY(list.get(i).ids).length());
       }
 
+      int max_id_occurring = 9; // XXX fudge
+
       // For each id,
       // whenever there are 2 or more distinct runs with the same coords,
       // make a label for those coords.
       String[][] id2index2label;
       {
-        int max_id_occurring = 9; // XXX fudge
         id2index2label = new String[max_id_occurring+1][n];  // nulls initially
 
         for (int id = 0; id <= max_id_occurring; ++id) {
@@ -434,10 +483,15 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       float yOfInterestForIdNonzero = Float.NaN;
       boolean knownToBeSafe = true;  // actually the same as idOfInterest==-1
       boolean knownToBeBugging = false;
+      final float[] mostRecentNonSuspiciousX = new float[max_id_occurring+1];
+      final float[] mostRecentNonSuspiciousY = new float[max_id_occurring+1];
 
       long refTimeMillis = list.get(0).eventTimeMillis;
       for (int i = 0; i < n;  ++i) {
         LogicalMotionEvent e = list.get(i);
+
+        boolean justNowGotCoordsOfInterestForId0 = false;
+        boolean justNowGotCoordsOfInterestForIdNonzero = false;
 
         if (e.action == MotionEvent.ACTION_POINTER_DOWN
          && e.actionId == 0
@@ -451,6 +505,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           yOfInterestForId0 = e.y[0];
           xOfInterestForIdNonzero = Float.NaN;
           yOfInterestForIdNonzero = Float.NaN;
+          justNowGotCoordsOfInterestForId0 = true;
         }
         // And the very next packet seems to always have size 2,
         // and the last (primary) entry in it is the buggy non-0-id item, if any
@@ -463,6 +518,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             CHECK_GE(idOfInterest, 0);
             xOfInterestForIdNonzero = e.x[idOfInterest];
             yOfInterestForIdNonzero = e.y[idOfInterest];
+            justNowGotCoordsOfInterestForIdNonzero = true;
           }
         }
 
@@ -477,9 +533,12 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                                 (actionToString(e.action)+(e.action==MotionEvent.ACTION_MOVE?"  ":"("+e.actionId+")"))),
                                 STRINGIFY(e.ids)));
         for (int id = 0; id < e.x.length; ++id) {
-          if (!Float.isNaN(e.x[id])) {
+          if (Float.isNaN(e.x[id])) {
+            //sb.append(String.format("%29s", ""));
+            sb.append(String.format("%52s", "", ""));
+          } else {
             //String coordsString = String.format("%.9g,%.9g", e.x[id], e.y[id]);
-            String coordsString = String.format("%.9g,%.9g,%.9g,%.9g,%.9g", e.x[id], e.y[id], e.pressure[id], e.size[id], e.orientation[id]);
+            String coordsString = String.format("%.9g,%.9g,%.9g,%.9g", e.x[id], e.y[id], e.pressure[id], e.size[id]);  // don't bother with orientation, it's always +-pi/2
 
             boolean parenthesized = false;
             if (i >= 1) {
@@ -493,6 +552,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             if (!parenthesized) {
                 coordsString = " "+coordsString+" ";
             }
+            coordsString = String.format(" %2d:%s", id, coordsString);
 
             String label = id2index2label[id][i];
             if (label != null) {
@@ -514,7 +574,9 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                 if (id < ePrev.x.length
                  && e.pressure[id] == ePrev.pressure[id]
                  && e.size[id] == ePrev.size[id]
-                 && (e.x[id] != ePrev.x[id] || e.y[id] != ePrev.y[id])) {
+                 //&& (e.x[id] != ePrev.x[id] || e.y[id] != ePrev.y[id])   // XXX wrong!  need to be comparing with previous *corrected*
+                 && (e.x[id] != mostRecentNonSuspiciousX[id] || e.y[id] != mostRecentNonSuspiciousY[id])   // XXX wrong!  need to be comparing with previous *corrected*
+                 ) {
                   foundSmokingGun = true;
                 }
               }
@@ -536,17 +598,22 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                 foundSmokingGun = false;
               }
 
+              if (!foundSmokingGun) {
+                mostRecentNonSuspiciousX[id] = e.x[id];
+                mostRecentNonSuspiciousY[id] = e.y[id];
+              }
 
-              if (foundSmokingGun) {
+              if (id==0 && justNowGotCoordsOfInterestForId0) {
+                coordsString += "!";
+              } else if (id!=0 && justNowGotCoordsOfInterestForIdNonzero) {
+                coordsString += "!";
+              } else if (foundSmokingGun) {
                 coordsString += "?";
               } else {
                 coordsString += " ";
               }
             }
-
-            sb.append(String.format(" %2d:%-17s", id, coordsString));
-          } else {
-            sb.append(String.format(" %2s %-17s", "", ""));
+            sb.append(coordsString);
           }
         }
         Log.i(TAG, sb.toString());
