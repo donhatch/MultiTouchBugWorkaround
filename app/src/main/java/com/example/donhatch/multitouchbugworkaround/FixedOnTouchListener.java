@@ -108,7 +108,11 @@
 2.640  523/574:                  {1}                          1: 2193.23853,510.645386,1.47500002,0.258789063,-1.57079637
 2.648  524/574:           MOVE   {1}                          1: 2193.23853,510.177124,1.47500002,0.258789063,-1.57079637
 */
-//  - first appearance of wrongness is always in idNonzero, always during the initial static x,y of id0 on its POINTER_DOWN
+//  - first appearance of wrongness is always in idNonzero, always during the initial static x,y of id0 on its POINTER_DOWN  (which always seems to be about 40 to 60 ms, regardless of whether bugging)
+//  - that first bad x,y, which is in idNonzero as previously stated, is always 16 to 17 ms after id0's POINTER_DOWN  (or, occasionally, 25ms)
+//  - when bugging, there are no dups other than the wrong x,y's  (because dups *turn into* the wrong x,y's)
+//    therefore if we see a dup other than the anchor, the bug is NOT happening.
+//  - when bugging, wrong x,y values always occur when it would otherwise be a dup-- which, I think, occur when some *other* id changed?  (or, maybe, same id pressure changed)
 //  - when the bug happens, idNonzero's x,y always:
 //      - starts at anchor, maybe stays there a while with same pressure&size, goes to 1 other value (same or diff p&s), immediately comes back to anchor with same p&s as prev.
 // WRONG. counterexample:
@@ -123,6 +127,16 @@
 1.279  249/354:                  {0, 1}  0:(2131.26001,1080.24976,0.949999988,0.221191406)A   1: 2489.63574,808.438599,1.53750002,0.315917969 A?
 1.279  250/354:                  {0, 1}  0:(2131.26001,1080.24976,0.949999988,0.221191406)A   1: 2489.13574,812.435791,1.53750002,0.314941406
 1.288  251/354:                  {0, 1}  0:(2131.26001,1080.24976,0.949999988,0.222167969)A   1: 2489.63574,808.438599,1.53750002,0.314941406 A?
+and another:
+0.393   75/120:           MOVE   {1}                                                         1: 1211.57935,201.859818,1.22500002,0.260742188
+0.402   76/120:  POINTER_DOWN(0) {0, 1}  0: 609.788269,479.666901,0.712500036,0.202636719 A!  1:(1211.57935,201.859818,1.22500002,0.260742188)
+0.402   77/120:                  {0, 1}  0:(609.788269,479.666901,0.712500036,0.202636719)A   1: 1211.57935,203.858429,1.22500002,0.261718750
+0.406   78/120:           MOVE   {0, 1}  0:(609.788269,479.666901,0.712500036,0.202636719)A   1: 1211.57935,204.857727,1.22500002,0.261718750 A!
+0.410   79/120:                  {0, 1}  0:(609.788269,479.666901,0.725000024,0.204589844)A   1:(1211.57935,204.857727,1.22500002,0.261718750)A?
+0.410   80/120:                  {0, 1}  0:(609.788269,479.666901,0.725000024,0.204589844)A   1: 1210.57971,205.857040,1.23750007,0.262695313
+0.419   81/120:                  {0, 1}  0:(609.788269,479.666901,0.737500012,0.208007813)A   1: 1211.57935,204.857727,1.23750007,0.262695313 A?
+0.419   82/120:           MOVE   {0, 1}  0:(609.788269,479.666901,0.737500012,0.208007813)A   1: 1209.58008,207.855652,1.25000000,0.263671875
+0.427   83/120:                  {0, 1}  0:(609.788269,479.666901,0.762499988,0.210449219)A   1: 1211.57935,204.857727,1.25000000,0.263671875 A?
 */
 //
 // Correlation with timestamp:
@@ -131,6 +145,9 @@
 //        (except when it happened on 0's POINTER_UP, in which case there was no time-advace. argh!), in which case there was no time-advace. argh!)
 // Correlation with packet boundaries:
 //      - none.
+// Correlation with  event-happening-immedately-after-POINTER_DOWN(0)-is-MOVE-of-idNonzero-with-1-historical:
+//      - when bugging, seems to be always that syndrome  (x,y of the historical may be same, maybe different)
+//      - when not bugging: can be that, or can be something else, e.g. 2 historical, 2nd same as first.
 //
 // * HOW DO I WRAP THIS UP?
 //   Need a heuristic that always works in practice.
@@ -207,7 +224,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
 
         //MotionEvent.PointerCoords pointerCoords = new MotionEvent.PointerCoords);
         //getPointerCoords(pointerIndex, pointerCoords);
-        // Bleah, I don't see how to tweak the historical.
+        // Bleah, I don't see how to tweak the historical.  I guess I'll create one from scratch then.
 
         Log.i(TAG, "      after tweaking a historical:");
         simpleDumpMotionEvent(motionEvent);
@@ -305,10 +322,15 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     public float[/*max_id_occurring+1*/] y;
     public float[/*max_id_occurring+1*/] pressure;
     public float[/*max_id_occurring+1*/] size;
-    // orientation seems to be useless for this analysis; it's always -1.57079637
-    public float[/*max_id_occurring+1*/] orientation;  // useless for 
+    // orientation seems to be useless for this analysis; it's always +-1.57079637
+    public float[/*max_id_occurring+1*/] orientation;
+    // dammit! relative_x,relative_y always zero.
+    public float[/*ditto*/] relative_x;
+    public float[/*ditto*/] relative_y;
+
+
     // all arrays assumed to be immutable.
-    public LogicalMotionEvent(boolean isHistorical, long eventTimeMillis, int action, int actionId, int ids[], float[] x, float[] y, float[] pressure, float[] size, float[] orientation) {
+    public LogicalMotionEvent(boolean isHistorical, long eventTimeMillis, int action, int actionId, int ids[], float[] x, float[] y, float[] pressure, float[] size, float[] orientation, float[] relative_x, float[] relative_y) {
       this.isHistorical = isHistorical;
       this.eventTimeMillis = eventTimeMillis;
       this.action = action;
@@ -319,6 +341,8 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       this.pressure = pressure;
       this.size = size;
       this.orientation = orientation;
+      this.relative_x = relative_x;
+      this.relative_y = relative_y;
     }
     // Breaks motionEvent down into LogicalMotionEvents and appends them to list.
     public static void breakDown(MotionEvent motionEvent, ArrayList<LogicalMotionEvent> list) {
@@ -339,12 +363,16 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         final float[] pressure = new float[maxIdOccurring+1];
         final float[] size = new float[maxIdOccurring+1];
         final float[] orientation = new float[maxIdOccurring+1];
+        final float[] relative_x = new float[maxIdOccurring+1];
+        final float[] relative_y = new float[maxIdOccurring+1];
         for (int id = 0; id < maxIdOccurring+1; ++id) {
           x[id] = Float.NaN;
           y[id] = Float.NaN;
           pressure[id] = Float.NaN;
           size[id] = Float.NaN;
           orientation[id] = Float.NaN;
+          relative_x[id] = Float.NaN;
+          relative_y[id] = Float.NaN;
         }
         for (int index = 0; index < pointerCount; ++index) {
           final int id = ids[index]; motionEvent.getPointerId(index);
@@ -354,8 +382,12 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           size[id] = h==historySize ? motionEvent.getSize(index) : motionEvent.getHistoricalSize(index, h);
           orientation[id] = h==historySize ? motionEvent.getOrientation(index) : motionEvent.getHistoricalOrientation(index, h);
           CHECK_EQ(Math.abs(orientation[id]), 1.57079637f);  // XXX not sure if this is reliable on all devices, but it's what I always get
+          relative_x[id] = h==historySize ? motionEvent.getAxisValue(MotionEvent.AXIS_RELATIVE_X,index) : motionEvent.getHistoricalAxisValue(MotionEvent.AXIS_RELATIVE_X, index, h);
+          relative_y[id] = h==historySize ? motionEvent.getAxisValue(MotionEvent.AXIS_RELATIVE_Y,index) : motionEvent.getHistoricalAxisValue(MotionEvent.AXIS_RELATIVE_Y, index, h);
+          CHECK_EQ(Math.abs(relative_x[id]), 0.f);  // XXX not sure if this is reliable on all devices, but it's what I always get
+          CHECK_EQ(Math.abs(relative_y[id]), 0.f);  // XXX not sure if this is reliable on all devices, but it's what I always get
         }
-        list.add(new LogicalMotionEvent(h<historySize, eventTimeMillis, action, actionId, ids, x, y, pressure, size, orientation));
+        list.add(new LogicalMotionEvent(h<historySize, eventTimeMillis, action, actionId, ids, x, y, pressure, size, orientation, relative_x, relative_y));
       }
     }
 
@@ -539,6 +571,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           } else {
             //String coordsString = String.format("%.9g,%.9g", e.x[id], e.y[id]);
             String coordsString = String.format("%.9g,%.9g,%.9g,%.9g", e.x[id], e.y[id], e.pressure[id], e.size[id]);  // don't bother with orientation, it's always +-pi/2
+            //String coordsString = String.format("%.9g,%.9g,%.9g,%.9g,%.9g,%.9g", e.x[id], e.y[id], e.pressure[id], e.size[id], e.relative_x[id], e.relative_y[id]);  // don't bother with orientation, it's always +-pi/2
 
             boolean parenthesized = false;
             if (i >= 1) {
@@ -671,6 +704,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           int historicalMetaState = unfixed.getMetaState(); // huh? this can't be right, but I don't see any way to query metaState per-history
           for (int index = 0; index < pointerCount; ++index) {
             unfixed.getHistoricalPointerCoords(index, h, pointerCoords[index]);
+            Log.i(TAG, "XXX pointerCoords = "+pointerCoords[index]);
           }
           fixed.addBatch(unfixed.getHistoricalEventTime(h),
                          pointerCoords,
