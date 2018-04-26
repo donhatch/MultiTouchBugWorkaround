@@ -34,6 +34,7 @@
 //      twice or more, while 0-id is still in its down position.
 // Q: what other changes are happening that I'm not tracking, and can I use them to characterize?
 //    - pressure? size? axis? blah blah blah
+// Q: can the bug affect a *UP? or just moves?
 // CONJECTURES:
 //  - when it begins, it is always the case that:
 //      - id 0 just went down for the not-first time
@@ -65,6 +66,25 @@
 //  - every time it gives a bad (stuck) x,y, the *correct* value is the *previous* x,y.
 //    the current size,pressure are always (correctly) the same as th size,pressure
 //    from that previous one.
+// Ooh important-- the bug can persist on the 0 id for a short time after one of the participating ids went UP!
+/*
+8.973 1514/1552:                  {0, 1}  0:(1614.43945,884.385803,1.48750007,0.250976563,-1.57079637)A   1:(2393.16919,686.523193,1.28750002,0.237792969,-1.57079637)A
+8.973 1515/1552:           MOVE   {0, 1}  0:(1614.43945,884.385803,1.48750007,0.250976563,-1.57079637)A   1:(2393.16919,686.523193,1.23750007,0.238769531,-1.57079637)A
+8.981 1516/1552:           MOVE   {0, 1}  0:(1614.43945,884.385803,1.48750007,0.251953125,-1.57079637)A   1:(2393.16919,686.523193,1.23750007,0.238769531,-1.57079637)A
+8.981 1517/1552:    POINTER_UP(1) {0, 1}  0:(1614.43945,884.385803,1.48750007,0.251953125,-1.57079637)A   1:(2393.16919,686.523193,1.23750007,0.238769531,-1.57079637)A
+8.988 1518/1552:           MOVE   {0}     0:(1614.43945,884.385803,1.50000000,0.250488281,-1.57079637)A
+9.005 1519/1552:           MOVE   {0}     0:(1614.43945,884.385803,1.50000000,0.250488281,-1.57079637)A
+9.014 1520/1552:                  {0}     0: 469.836884,1031.28381,1.50000000,0.250488281,-1.57079637
+*/
+// - also seen the non-0 be bad on the 0-UP... and once in  while, it's even bad a bit after the 0-up
+/*
+2.574  519/574:                  {0, 1}  0: 314.890656,1050.27063,1.18750000,0.231445313,-1.57079637     1:(2020.29858,540.124939,1.47500002,0.258789063,-1.57079637)A
+2.583  520/574:           MOVE   {0, 1}  0: 313.891022,1050.27063,1.14999998,0.231445313,-1.57079637     1:(2020.29858,540.124939,1.47500002,0.258789063,-1.57079637)A
+2.591  521/574:    POINTER_UP(0) {0, 1}  0:(313.891022,1050.27063,1.14999998,0.231445313,-1.57079637)    1:(2020.29858,540.124939,1.47500002,0.258789063,-1.57079637)A
+2.623  522/574:           MOVE   {1}                          1:(2020.29858,540.124939,1.47500002,0.258789063,-1.57079637)A
+2.640  523/574:                  {1}                          1: 2193.23853,510.645386,1.47500002,0.258789063,-1.57079637
+2.648  524/574:           MOVE   {1}                          1: 2193.23853,510.177124,1.47500002,0.258789063,-1.57079637
+*/
 //
 
 package com.example.donhatch.multitouchbugworkaround;
@@ -280,6 +300,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           pressure[id] = h==historySize ? motionEvent.getPressure(index) : motionEvent.getHistoricalPressure(index, h);
           size[id] = h==historySize ? motionEvent.getSize(index) : motionEvent.getHistoricalSize(index, h);
           orientation[id] = h==historySize ? motionEvent.getOrientation(index) : motionEvent.getHistoricalOrientation(index, h);
+          CHECK_EQ(Math.abs(orientation[id]), 1.57079637f);  // XXX not sure if this is reliable on all devices, but it's what I always get
         }
         list.add(new LogicalMotionEvent(h<historySize, eventTimeMillis, action, actionId, ids, x, y, pressure, size, orientation));
       }
@@ -397,9 +418,28 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         }
       }
 
+      // States:
+      //        - known to be safe
+      //        - known to be bugging
+      //        - known to be safe or safe soon (0 or idOfInterest went UP)
+      int idOfInterest = -1; // never zero.  if positive, either might be bugging or definitely bugging.
+      boolean knownToBeSafe = true;  // actually the same as idOfInterest==-1
+      boolean knownToBeBugging = false;
+
       long refTimeMillis = list.get(0).eventTimeMillis;
       for (int i = 0; i < n;  ++i) {
         LogicalMotionEvent e = list.get(i);
+
+        if (e.action == MotionEvent.ACTION_POINTER_DOWN
+         && e.actionId == 0
+         && e.ids.length == 2) {
+          CHECK_EQ(e.ids[0], 0);
+          // Might be bugging.  Yellow alert.
+          knownToBeSafe = false;
+          knownToBeBugging = false;
+          idOfInterest = e.ids[1];
+        }
+
         StringBuilder sb = new StringBuilder();
         long relativeTimeMillis = e.eventTimeMillis - refTimeMillis;
         if (e.isHistorical) CHECK_EQ(e.action, MotionEvent.ACTION_MOVE);
@@ -433,6 +473,37 @@ public class FixedOnTouchListener implements View.OnTouchListener {
               coordsString += label;
             } else {
               coordsString += " ";
+            }
+
+            if (true) {
+              // Look for smoking gun: pressure,size same as previous but x,y *not* same as most-recent-good.
+              // Bleah, it's not conclusive--- lots of false positives, i.e. pressure,size same as previous
+              // and x,y legitimately different from previous.
+              // Haven't seen any false negatives though.
+              boolean foundSmokingGun = false;
+              if (i > 0) {
+                LogicalMotionEvent ePrev = list.get(i-1);
+                // XXX this type need not be MOVE in order for bug to manifest..  must previous type be MOVE in order for bug to manifest?
+
+                if (id < ePrev.x.length
+                 && e.pressure[id] == ePrev.pressure[id]
+                 && e.size[id] == ePrev.size[id]
+                 && (e.x[id] != ePrev.x[id] || e.y[id] != ePrev.y[id])) {
+                  foundSmokingGun = true;
+                }
+              }
+
+              if (knownToBeSafe
+               || (id != 0 && id != idOfInterest)) {  // those are the only suspects
+                 foundSmokingGun = false;
+              }
+
+
+              if (foundSmokingGun) {
+                coordsString += "?";
+              } else {
+                coordsString += " ";
+              }
             }
 
             sb.append(String.format(" %2d:%-17s", id, coordsString));
