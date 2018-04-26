@@ -12,24 +12,11 @@
 //      with this:
 //         setOnTouchListener(new MultiTouchListenerBugFixWrapper(someTouchListener))
 //
-// Unfortunately MotionEvent is not public,
-// so the touch listener will have to be modified to take a FixedMotionEvent instead of a MotionEvent.
-// Given that, I'm going to arrange it differently.  That is:
-// That is:
-//      abstract class FixedOnTouchListener implements View.OnTouchListener {
-//         @Override
-//         final boolean onTouch(View view, MotionEvent motionEvent) {
-//           FixedMotionEvent fixedMotionEvent = ...;
-//           return onFixedTouch(view, fixedMotionEvent);
-//         }
-//      }
-//
-//
 // Wow, the behavior is elusive.
 // Strategy for debugging it:
 //      Keep entire history
-//      Process entire history
-//      See if it fixed all major discontinuities
+//      On final UP, dump entire history, highlighting suspicous-looking correlations
+//      
 
 package com.example.donhatch.multitouchbugworkaround;
 
@@ -72,7 +59,16 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
   public PaintView(Context context) {
     super(context);
     Log.i(TAG, "    in PaintView ctor");
-    setOnTouchListener(new MyTouchListener());
+
+    if (false) {
+      // experiment
+      setOnTouchListener(new FixedOnTouchListener.OnTouchListenerTestWrapper(new MyTouchListener()));
+    } else if (true) {
+      setOnTouchListener(new FixedOnTouchListener(new MyTouchListener()));
+    } else {
+      setOnTouchListener(new MyTouchListener());
+    }
+
     addView(new Button(context) {{
       setText("Clear");
       setOnClickListener(new Button.OnClickListener() {
@@ -149,17 +145,11 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
   }
 
 
-  /*
   class MyTouchListener implements View.OnTouchListener {
     @Override
     public boolean onTouch(View view, MotionEvent event) {
-    */
 
-  class MyTouchListener extends FixedOnTouchListener {
-    @Override
-    public boolean onFixedTouch(View view, FixedMotionEvent event) {
-
-      final int verboseLevel = 1;  // 0:nothing, 1: in, 2: and out and more detail
+      final int verboseLevel = 0;  // 0:nothing, 1: in, 2: and out and more detail
       int pointerCount = event.getPointerCount();
       int cappedPointerCount = pointerCount > MAX_FINGERS ? MAX_FINGERS : pointerCount;
       int actionIndex = event.getActionIndex();
@@ -172,7 +162,7 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
         CHECK_EQ(event.findPointerIndex(pointerIds[i]), i);
       }
 
-      if (verboseLevel >= 1) Log.i(TAG, "                in PaintView onTouchEvent (hs="+event.getHistorySize()+") pc="+pointerCount+" ai="+actionIndex+" a="+actionToString(action)+" actionId="+actionId+" "+STRINGIFY(pointerIds));
+      if (verboseLevel >= 1) Log.i(TAG, "                in PaintView onTouchEvent (hs="+event.getHistorySize()+") pc="+pointerCount+" ai="+actionIndex+" a="+FixedOnTouchListener.actionToString(action)+" actionId="+actionId+" "+STRINGIFY(pointerIds));
 
       if ((action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) && actionId < MAX_FINGERS) {
         mFingerPaths[actionId] = new Path();

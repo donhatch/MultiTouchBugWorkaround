@@ -24,6 +24,8 @@
 //      OH WAIT!  Does addBatch add historical?  yes!!  so I can do it!
 //      ISSUE: HOVER_MOVE?  don't need to handle it because it isn't a touch event
 //      ISSUE: ACTION_CANCEL? never seen one, but have to handle it.
+//      Q: can I tweak the incoming??
+//         i.e. with setX(), setY(), getHistorical and tweak those... ?
 //
 // CONJECTURES:
 //  - when it begins, it is always the case that:
@@ -38,6 +40,7 @@
 //    it might take another event or more for other id to settle into the bug)
 //  - the anchor of the other has *not* appeared yet at the moment of 0-down.
 //  - it's its *next* distinct position (after possible repeats of current) (FALSE-- can be 2 after, maybe even more, I'm not sure)
+//  - the first bad non-0-id value is at the end of the first MOVE packet after the POINTER_DOWN(0).
 // Q: what is the first evidence that it's happening?
 //    - sometimes the non-0 pointer begins bugging before the 0 pointer even moves
 //      from its down position, so we have to recognize it-- how?
@@ -58,10 +61,82 @@ import java.util.HashMap;
 import static com.example.donhatch.multitouchbugworkaround.CHECK.*;
 import static com.example.donhatch.multitouchbugworkaround.STRINGIFY.STRINGIFY;
 
-public abstract class FixedOnTouchListener implements View.OnTouchListener {
+
+public class FixedOnTouchListener implements View.OnTouchListener {
+
+  private View.OnTouchListener wrapped;
+
+  public FixedOnTouchListener(View.OnTouchListener wrapped) {
+    this.wrapped = wrapped;
+  }
+
+
+  public static class OnTouchListenerTestWrapper implements View.OnTouchListener {
+    View.OnTouchListener wrapped;
+    public OnTouchListenerTestWrapper(View.OnTouchListener wrapped) {
+      this.wrapped = wrapped;
+    }
+    private void simpleDumpMotionEvent(MotionEvent motionEvent) {
+      int historySize = motionEvent.getHistorySize();
+      int pointerCount = motionEvent.getPointerCount();
+      for (int h = 0; h < historySize+1; ++h) {
+        if (h==historySize) {
+          Log.i(TAG, "          now:");
+        } else {
+          Log.i(TAG, "          "+h+"/"+historySize+":");
+        }
+        for (int index = 0; index < pointerCount; ++index) {
+          Log.i(TAG, "              id="+motionEvent.getPointerId(index)+": "+(h==historySize?motionEvent.getX():motionEvent.getHistoricalX(index,h))+","+(h==historySize?motionEvent.getY():motionEvent.getHistoricalY(index,h))+"");
+        }
+      }
+    }
+    @Override public boolean onTouch(View view, MotionEvent motionEvent) {
+      Log.i(TAG, "    in OnTouchListenerTestWrapper.onTouch");
+      Log.i(TAG, "      historySize = "+motionEvent.getHistorySize());
+
+      if (false) {
+        Log.i(TAG, "      before tweaking by -XXX,-XXX:");
+        simpleDumpMotionEvent(motionEvent);
+
+        if (motionEvent.getActionMasked() == MotionEvent.ACTION_DOWN || motionEvent.getActionMasked() == MotionEvent.ACTION_POINTER_DOWN) {
+          // Can I just tweak the motion event in place?
+          // Let's try messing with its X and Y.
+          motionEvent.setLocation(motionEvent.getX()-5000,
+                                  motionEvent.getY()-5000);
+          // Result: it seems to tweak *all* of the event! even the historical stuff!  wow!  and for all ids!? holy moly!
+          // hmm, I guess that's what its doc says: "Applies offsetLocation(float, float) with a delta from the current location to the given new location."
+        }
+
+        Log.i(TAG, "      after tweaking by -XXX,-XXX:");
+        simpleDumpMotionEvent(motionEvent);
+      } 
+
+      if (true) {
+        Log.i(TAG, "      before tweaking a historical:");
+        simpleDumpMotionEvent(motionEvent);
+
+        //MotionEvent.PointerCoords pointerCoords = new MotionEvent.PointerCoords);
+        //getPointerCoords(pointerIndex, pointerCoords);
+        // Bleah, I don't see how to tweak the historical.
+
+        Log.i(TAG, "      after tweaking a historical:");
+        simpleDumpMotionEvent(motionEvent);
+      }
+
+
+
+      Log.i(TAG, "      calling wrapped.onTouch");
+      boolean answer = wrapped.onTouch(view, motionEvent);
+      Log.i(TAG, "      returned from wrapped.onTouch: "+answer);
+      Log.i(TAG, "    out OnTouchListenerTestWrapper.onTouch, returning "+answer);
+      return answer;
+    }
+  }
 
   private static final String TAG = MultiTouchBugWorkaroundActivity.class.getSimpleName();  // XXX
 
+  // Note, MotionEvent has an actionToString(), but it takes an unmasked action;
+  // we want to take an unmasked action.
   public static String actionToString(int action) {
     if (action == MotionEvent.ACTION_DOWN) return "DOWN";
     if (action == MotionEvent.ACTION_POINTER_DOWN) return "POINTER_DOWN";
@@ -131,20 +206,24 @@ public abstract class FixedOnTouchListener implements View.OnTouchListener {
 
   // To aid analysis.
   private static class LogicalMotionEvent {
+    public boolean isHistorical;
     public long eventTimeMillis;  // "in the uptimeMillis() time base"
     public int action;
     public int actionId;
     public int ids[];
     public float[/*max_id_occurring+1*/] x;
     public float[/*max_id_occurring+1*/] y;
+    public float[/*max_id_occurring+1*/] pressure;
     // all arrays assumed to be immutable.
-    public LogicalMotionEvent(long eventTimeMillis, int action, int actionId, int ids[], float[] x, float[] y) {
+    public LogicalMotionEvent(boolean isHistorical, long eventTimeMillis, int action, int actionId, int ids[], float[] x, float[] y, float[] pressure) {
+      this.isHistorical = isHistorical;
       this.eventTimeMillis = eventTimeMillis;
       this.action = action;
       this.actionId = actionId;
       this.ids = ids;
       this.x = x;
       this.y = y;
+      this.pressure = pressure;
     }
     // Breaks motionEvent down into LogicalMotionEvents and appends them to list.
     public static void breakDown(MotionEvent motionEvent, ArrayList<LogicalMotionEvent> list) {
@@ -162,16 +241,19 @@ public abstract class FixedOnTouchListener implements View.OnTouchListener {
         final long eventTimeMillis = h==historySize ? motionEvent.getEventTime() : motionEvent.getHistoricalEventTime(h);
         final float[] x = new float[maxIdOccurring+1];
         final float[] y = new float[maxIdOccurring+1];
+        final float[] pressure = new float[maxIdOccurring+1];
         for (int id = 0; id < maxIdOccurring+1; ++id) {
           x[id] = Float.NaN;
           y[id] = Float.NaN;
+          pressure[id] = Float.NaN;
         }
         for (int index = 0; index < pointerCount; ++index) {
           final int id = ids[index]; motionEvent.getPointerId(index);
           x[id] = h==historySize ? motionEvent.getX(index) : motionEvent.getHistoricalX(index, h);
           y[id] = h==historySize ? motionEvent.getY(index) : motionEvent.getHistoricalY(index, h);
+          pressure[id] = h==historySize ? motionEvent.getPressure(index) : motionEvent.getHistoricalPressure(index, h);
         }
-        list.add(new LogicalMotionEvent(eventTimeMillis, action, actionId, ids, x, y));
+        list.add(new LogicalMotionEvent(h<historySize, eventTimeMillis, action, actionId, ids, x, y, pressure));
       }
     }
 
@@ -292,11 +374,13 @@ public abstract class FixedOnTouchListener implements View.OnTouchListener {
         LogicalMotionEvent e = list.get(i);
         StringBuilder sb = new StringBuilder();
         long relativeTimeMillis = e.eventTimeMillis - refTimeMillis;
+        if (e.isHistorical) CHECK_EQ(e.action, MotionEvent.ACTION_MOVE);
         sb.append(String.format("          %3d.%03d %4d/%d: %16s %-"+idsWidth+"s",
                                 relativeTimeMillis/1000,
                                 relativeTimeMillis%1000,
                                 i, n,
-                                (actionToString(e.action)+(e.action==MotionEvent.ACTION_MOVE?"  ":"("+e.actionId+")")),
+                                (e.action==MotionEvent.ACTION_MOVE && e.isHistorical ? "" :
+                                (actionToString(e.action)+(e.action==MotionEvent.ACTION_MOVE?"  ":"("+e.actionId+")"))),
                                 STRINGIFY(e.ids)));
         for (int id = 0; id < e.x.length; ++id) {
           if (!Float.isNaN(e.x[id])) {
@@ -334,189 +418,77 @@ public abstract class FixedOnTouchListener implements View.OnTouchListener {
 
   private ArrayList<LogicalMotionEvent> logicalMotionEventsSinceFirstDown = new ArrayList<LogicalMotionEvent>();
 
-  final private float[] XXXstartX = new float[MAX_FINGERS];
-  final private float[] XXXstartY = new float[MAX_FINGERS];
-  final private float[] XXXprevPrevX = new float[MAX_FINGERS];
-  final private float[] XXXprevPrevY = new float[MAX_FINGERS];
-  final private float[] XXXprevX = new float[MAX_FINGERS];
-  final private float[] XXXprevY = new float[MAX_FINGERS];
-  private float XXXmaxDelta = 0.f;
-  private float XXXmaxDeltaX = 0.f;
-  private float XXXmaxDeltaY = 0.f;
-
-  final int strategy = 0;
-
-  // Framework calls this; constructs a FixedMotionEvent and passes it to onFixedTouch (provided by a subclass).
+  // Framework calls this; we create a fixed MotionEvent
+  // and call the wrapped listener on it.
   @Override
   final public boolean onTouch(View view, MotionEvent unfixed) {
-    final int verboseLevel = 1;
-    final int pointerCount = unfixed.getPointerCount();
-    final int historySize = unfixed.getHistorySize();
-    final int action = unfixed.getActionMasked();
-    if (verboseLevel >= 1) {
-      int[] pointerIds = new int[pointerCount];
-      for (int index = 0; index < pointerCount; ++index) {
-        pointerIds[index] = unfixed.getPointerId(index);
-        CHECK_EQ(unfixed.findPointerIndex(pointerIds[index]), index);
-      }
-      Log.i(TAG, "    in intercepting onTouch "+actionToString(action)+(action==MotionEvent.ACTION_MOVE?"":"("+unfixed.getPointerId(unfixed.getActionIndex())+")")+" "+STRINGIFY(pointerIds));
-      if (action == MotionEvent.ACTION_DOWN) {
-        XXXmaxDelta = 0.f;
-        XXXmaxDeltaX = 0.f;
-        XXXmaxDeltaY = 0.f;
-      }
-      for (int h = 0; h < historySize+1; ++h) {
-        boolean suspicious = false;
-        StringBuilder suspicions = new StringBuilder();
-        StringBuilder sb = new StringBuilder();
-        sb.append((h==historySize ? "now" : h+"/"+historySize)+":");
-        for (int index = 0; index < pointerCount; ++index) {
-          final int id = unfixed.getPointerId(index);
-          float x = h==historySize ? unfixed.getX(index) : unfixed.getHistoricalX(index, h);
-          float y = h==historySize ? unfixed.getY(index) : unfixed.getHistoricalY(index, h);
-          if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
-            XXXstartX[id] = x;
-            XXXstartY[id] = y;
-            XXXprevPrevX[id] = x;
-            XXXprevPrevY[id] = y;
-            XXXprevX[id] = x;
-            XXXprevY[id] = y;
-          }
+    final int verboseLevel = 1;  // 0: nothing, 1: dump entire sequence on final UP, 2: and in/out
+    if (verboseLevel >= 2) Log.i(TAG, "    in FixedOnTouchListener onTouch");
 
-          final float thisDelta = (float)Math.hypot(x-XXXprevX[id], y-XXXprevY[id]);
-          if (thisDelta > XXXmaxDelta) {
-            XXXmaxDelta = thisDelta;
-            XXXmaxDeltaX = Math.abs(x-XXXprevX[id]);
-            XXXmaxDeltaY = Math.abs(y-XXXprevY[id]);
-          }
-
-          if (x == XXXstartX[id] && y == XXXstartY[id] && !(x == XXXprevX[id] && y == XXXprevY[id])) {
-            suspicious = true;
-            suspicions.append("  ("+id+" suspicious by start logic)");
-          }
-          if (x == XXXprevPrevX[id] && y == XXXprevPrevY[id] && !(x == XXXprevX[id] && y == XXXprevY[id])) {
-            suspicious = true;
-            suspicions.append("  ("+id+" suspicious by prev logic)");
-          }
-          sb.append("  "+id+":"+x+","+y);
-
-          XXXprevPrevX[id] = XXXprevX[id];
-          XXXprevPrevY[id] = XXXprevY[id];
-          XXXprevX[id] = x;
-          XXXprevY[id] = y;
-        }
-        //if (suspicious) sb.append("  SUSPICIOUS!!!!!!!!!!!!!!!!!!!!!!!!!!");
-        if (suspicious) sb.append("  "+suspicions.toString()+" !!!!!!!!!!!!!!!!!!!!!!!!");
-        Log.i(TAG, "      "+sb.toString());
-      }
-      if (action == MotionEvent.ACTION_UP) {
-        if (verboseLevel >= 1) Log.i(TAG, "      max delta occurring in whole thing = "+XXXmaxDeltaX+","+XXXmaxDeltaY+" -> "+XXXmaxDelta);
-      }
-    }
-
-    final float[][] historicalAndActualX = new float[pointerCount][historySize+1];
-    final float[][] historicalAndActualY = new float[pointerCount][historySize+1];
-    for (int index = 0; index < pointerCount; ++index) {
-      final int id = unfixed.getPointerId(index);
-      CHECK_LT(id, MAX_FINGERS);
-      for (int h = 0; h < historySize+1; ++h) {
-        float xOrig = h==historySize ? unfixed.getX(index) : unfixed.getHistoricalX(index, h);
-        float yOrig = h==historySize ? unfixed.getY(index) : unfixed.getHistoricalY(index, h);
-        if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
-          startXorig[id] = xOrig;
-          startYorig[id] = yOrig;
-          prevPrevXorig[id] = xOrig;
-          prevPrevYorig[id] = yOrig;
-          prevXorig[id] = xOrig;
-          prevYorig[id] = yOrig;
-          prevPrevXcorrected[id] = xOrig;
-          prevPrevYcorrected[id] = yOrig;
-          prevXcorrected[id] = xOrig;
-          prevYcorrected[id] = yOrig;
-        }
-        float xCorrected = xOrig;
-        float yCorrected = yOrig;
-        if (strategy == 1) {
-          // do nothing
-        } else if (strategy == 1) {
-          if (xOrig == startXorig[id] && yOrig == startYorig[id]) {
-            // assume x,y are bogus; replace them with previous x,y.
-            xCorrected = prevXorig[id];
-            yCorrected = prevYorig[id];
-          }
-        } else if (strategy == 2) {
-          if (xOrig == prevPrevXorig[id] && yOrig == prevPrevYorig[id] && !(xOrig == prevXorig[id] && yOrig == prevYorig[id])) {
-            Log.i(TAG, "      CORRECTED h="+h+" id="+id+" I think");
-            xCorrected = prevXorig[id];
-            yCorrected = prevYorig[id];
-          }
-        }
-        historicalAndActualX[index][h] = xCorrected;
-        historicalAndActualY[index][h] = yCorrected;
-
-        prevPrevXorig[id] = prevXorig[id];
-        prevPrevYorig[id] = prevYorig[id];
-        prevXorig[id] = xOrig;
-        prevYorig[id] = yOrig;
-
-        prevPrevXcorrected[id] = prevXcorrected[id];
-        prevPrevYcorrected[id] = prevYcorrected[id];
-        prevXcorrected[id] = xCorrected;
-        prevYcorrected[id] = yCorrected;
-      }
-    }
+    LogicalMotionEvent.breakDown(unfixed, logicalMotionEventsSinceFirstDown);
 
     boolean answer;
-    if (false) {
-      // Use this one
-      // obtain(long downTime, long eventTime, int action, int pointerCount, PointerProperties[] pointerProperties, PointerCoords[] pointerCoords, int metaState, int buttonState, float xPrecision, float yPrecision, int deviceId, int edgeFlags, int source, int flags)
+    {
+      // Use this one I think:
+      //   obtain(long downTime, long eventTime, int action, int pointerCount, PointerProperties[] pointerProperties, PointerCoords[] pointerCoords, int metaState, int buttonState, float xPrecision, float yPrecision, int deviceId, int edgeFlags, int source, int flags)
       // and use addBatch to create the historical stuff.
 
-      /*
-      MotionEvent motionEvent = motionEvent.obtain(
-          downTime,
-          eventTime,
-          action,
+      final int pointerCount = unfixed.getPointerCount();
+      final MotionEvent.PointerProperties pointerProperties[] = new MotionEvent.PointerProperties[pointerCount];  // CBB: reuse
+      final MotionEvent.PointerCoords pointerCoords[] = new MotionEvent.PointerCoords[pointerCount];  // CBB: reuse
+      for (int index = 0; index < pointerCount; ++index) {
+        pointerProperties[index] = new MotionEvent.PointerProperties();
+        unfixed.getPointerProperties(index, pointerProperties[index]);
+        pointerCoords[index] = new MotionEvent.PointerCoords();
+        unfixed.getPointerCoords(index, pointerCoords[index]);
+      }
+      MotionEvent fixed = MotionEvent.obtain(
+          unfixed.getDownTime(),
+          unfixed.getEventTime(),
+          unfixed.getAction(),  // not getActionMasked(), apparently
           pointerCount,
           pointerProperties,
           pointerCoords,
-          metaState,
-          buttonState,
-          xPrecision,
-          yPrecision,
-          deviceId,
-          edgeFlags,
-          source,
-          flags);
-      }
-      */
-      answer = false;
-    } else {  // previous way, before I knew how to obtain
-      // CBB: reuse the same FixedMotionEvent each time
-      FixedMotionEvent fixedMotionEvent = new FixedMotionEvent(unfixed,
-                                                               historicalAndActualX,
-                                                               historicalAndActualY);
-      answer = onFixedTouch(view, fixedMotionEvent);
-    }
-
-
-    {
-      LogicalMotionEvent.breakDown(unfixed, logicalMotionEventsSinceFirstDown);
-      if (action == MotionEvent.ACTION_UP) {
-        if (verboseLevel >= 1) {
-          Log.i(TAG, "      ===============================================================");
-          Log.i(TAG, "      LOGICAL SEQUENCE:");
-          LogicalMotionEvent.dump(logicalMotionEventsSinceFirstDown);
-          Log.i(TAG, "      ===============================================================");
+          unfixed.getMetaState(),
+          unfixed.getButtonState(),
+          unfixed.getXPrecision(),
+          unfixed.getYPrecision(),
+          unfixed.getDeviceId(),
+          unfixed.getEdgeFlags(),
+          unfixed.getSource(),
+          unfixed.getFlags());
+      CHECK_EQ(fixed.getAction(), unfixed.getAction());
+      CHECK_EQ(fixed.getActionMasked(), unfixed.getActionMasked());
+      CHECK_EQ(fixed.getActionIndex(), unfixed.getActionIndex());
+      try {
+        final int historySize = unfixed.getHistorySize();
+        for (int h = 0; h < historySize; ++h) {
+          int historicalMetaState = unfixed.getMetaState(); // huh? this can't be right, but I don't see any way to query metaState per-history
+          for (int index = 0; index < pointerCount; ++index) {
+            unfixed.getHistoricalPointerCoords(index, h, pointerCoords[index]);
+          }
+          fixed.addBatch(unfixed.getHistoricalEventTime(h),
+                         pointerCoords,
+                         historicalMetaState);
         }
-
-        logicalMotionEventsSinceFirstDown.clear();
+        answer = wrapped.onTouch(view, fixed);
+      } finally {
+        fixed.recycle();
       }
     }
 
-    if (verboseLevel >= 1) Log.i(TAG, "    out intercepting onTouch, returning "+answer);
+    if (unfixed.getActionMasked() == MotionEvent.ACTION_UP) {
+      if (verboseLevel >= 1) {
+        Log.i(TAG, "      ===============================================================");
+        Log.i(TAG, "      LOGICAL MOTION EVENT SEQUENCE:");
+        LogicalMotionEvent.dump(logicalMotionEventsSinceFirstDown);
+        Log.i(TAG, "      ===============================================================");
+      }
+      logicalMotionEventsSinceFirstDown.clear();
+    }
+
+    if (verboseLevel >= 2) Log.i(TAG, "    out FixedOnTouchListener onTouch, returning "+answer);
     return answer;
   }  // onTouch
-  abstract protected boolean onFixedTouch(View view, FixedMotionEvent fixedMotionEvent);
 }
 
