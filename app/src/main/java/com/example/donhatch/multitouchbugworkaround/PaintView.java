@@ -400,12 +400,20 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
             //  - so the anchor of id 0 is the down position!  And the anchor of the other one
             //    is its value at the moment of that 0-down.  (FALSE-- not at the exact moment;
             //    it might take another event or more for other id to settle into the bug)
+            //  - the anchor of the other has *not* appeared yet at the moment of 0-down.
+            //  - it's its *next* distinct position (after possible repeats of current) (FALSE-- can be 2 after, maybe even more, I'm not sure)
+            // Q: what is the first evidence that it's happening?
+            //    - sometimes the non-0 pointer begins bugging before the 0 pointer even moves
+            //      from its down position, so we have to recognize it-- how?
+            //    - seems to always start with the non-0 repeating the thing it's going to get stuck on,
+            //      twice or more, while 0-id is still in its down position.
             //    
 
 
             for (int i0 = 0; i0 < n;) {
-              // advance i0 to something that has a fingerprint
+              // advance i0, if necessary, to something that has a fingerprint
               while (i0 < n && index2fingerprint[i0] == null) i0++;
+              if (i0 == n) break;
               int i1 = i0+1;
               // advance i1 to something that does *not* have a fingerprint
               while (i1 < n && index2fingerprint[i1] != null) i1++;
@@ -422,7 +430,7 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
                   }
                 }
               }
-              for (int i = 0; i < n; ++i) {
+              for (int i = i0; i < i1; ++i) {
                 String fingerprint = index2fingerprint[i];
                 if (fingerprint != null) {
                   boolean isRunStart = (i==0 || index2fingerprint[i-1]==null || !fingerprint.equals(index2fingerprint[i-1]));
