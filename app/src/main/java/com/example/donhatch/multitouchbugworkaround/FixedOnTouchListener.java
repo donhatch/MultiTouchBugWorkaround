@@ -1,3 +1,6 @@
+// The infamous Oreo 8.1 multitouch bug
+//
+// https://android-review.googlesource.com/c/platform/frameworks/native/+/640606/
 //      1. Make a straightforward wrapper.
 //         Pros:
 //              - don't need to tweak listeners
@@ -152,9 +155,11 @@ and another:
 // * HOW DO I WRAP THIS UP?
 //   Need a heuristic that always works in practice.
 //   It'll include things like:
-//   - consider things safe again N ms (or N events?) after id0 or idnonzero went up
-
-// 
+//      - consider things safe again N ms (or N events?) after id0 or idnonzero went up
+//   - Sloppy proposal #1:
+//       - Get the anchors (POINTER_DOWN x,y for id0, the primary x,y of the following event for idNonzero),
+//         and simply consider them forbidden (i.e. force x,y to not move, instead) until/unless safety is declared (or until a new POINTER_DOWN(0) occurs).
+//         That might be fine-- even if we get a false positive, forbidding one location on the screen is probably not a problem.
 //
 
 package com.example.donhatch.multitouchbugworkaround;
@@ -327,10 +332,12 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     // dammit! relative_x,relative_y always zero.
     public float[/*ditto*/] relative_x;
     public float[/*ditto*/] relative_y;
-
+    // oh screw this, get them all!
+    public MotionEvent.PointerCoords[] all_axis_values;
+    // rawX()/rawY() doesn't seem to be helpful: (1) can't query it per-history nor per-pointer, (2) the bug apparently affects this too so it doesn't give any clues
 
     // all arrays assumed to be immutable.
-    public LogicalMotionEvent(boolean isHistorical, long eventTimeMillis, int action, int actionId, int ids[], float[] x, float[] y, float[] pressure, float[] size, float[] orientation, float[] relative_x, float[] relative_y) {
+    public LogicalMotionEvent(boolean isHistorical, long eventTimeMillis, int action, int actionId, int ids[], float[] x, float[] y, float[] pressure, float[] size, float[] orientation, float[] relative_x, float[] relative_y, MotionEvent.PointerCoords[] all_axis_values) {
       this.isHistorical = isHistorical;
       this.eventTimeMillis = eventTimeMillis;
       this.action = action;
@@ -343,6 +350,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       this.orientation = orientation;
       this.relative_x = relative_x;
       this.relative_y = relative_y;
+      this.all_axis_values = all_axis_values;
     }
     // Breaks motionEvent down into LogicalMotionEvents and appends them to list.
     public static void breakDown(MotionEvent motionEvent, ArrayList<LogicalMotionEvent> list) {
@@ -365,6 +373,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         final float[] orientation = new float[maxIdOccurring+1];
         final float[] relative_x = new float[maxIdOccurring+1];
         final float[] relative_y = new float[maxIdOccurring+1];
+        final MotionEvent.PointerCoords[] all_axis_values = new MotionEvent.PointerCoords[maxIdOccurring+1];
         for (int id = 0; id < maxIdOccurring+1; ++id) {
           x[id] = Float.NaN;
           y[id] = Float.NaN;
@@ -373,6 +382,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           orientation[id] = Float.NaN;
           relative_x[id] = Float.NaN;
           relative_y[id] = Float.NaN;
+          all_axis_values[id] = new MotionEvent.PointerCoords();
         }
         for (int index = 0; index < pointerCount; ++index) {
           final int id = ids[index]; motionEvent.getPointerId(index);
@@ -386,8 +396,13 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           relative_y[id] = h==historySize ? motionEvent.getAxisValue(MotionEvent.AXIS_RELATIVE_Y,index) : motionEvent.getHistoricalAxisValue(MotionEvent.AXIS_RELATIVE_Y, index, h);
           CHECK_EQ(Math.abs(relative_x[id]), 0.f);  // XXX not sure if this is reliable on all devices, but it's what I always get
           CHECK_EQ(Math.abs(relative_y[id]), 0.f);  // XXX not sure if this is reliable on all devices, but it's what I always get
+          if (h==historySize) {
+            motionEvent.getPointerCoords(index, all_axis_values[id]);
+          } else {
+            motionEvent.getHistoricalPointerCoords(index, h, all_axis_values[id]);
+          }
         }
-        list.add(new LogicalMotionEvent(h<historySize, eventTimeMillis, action, actionId, ids, x, y, pressure, size, orientation, relative_x, relative_y));
+        list.add(new LogicalMotionEvent(h<historySize, eventTimeMillis, action, actionId, ids, x, y, pressure, size, orientation, relative_x, relative_y, all_axis_values));
       }
     }
 
@@ -411,6 +426,28 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       }
       CHECK(false);
       return null;
+    }
+
+    // PointerCoords.equals() doesn't work (just tests pointer equality)
+    private static boolean PointerCoordsEquals(MotionEvent.PointerCoords a, MotionEvent.PointerCoords b) {
+      int verboseLevel = 0;
+      if (verboseLevel >= 1) Log.i(TAG, "in PointerCoordsEquals(a, b)");
+      boolean answer = true;  // until proven otherwise
+      final int NUM_AXES = 64;  // empirically, getAxisValue(>=64) throws "java.lang.IllegalArgumentException: Axis out of range.".
+      for (int axis = 0; axis < NUM_AXES; ++axis) {
+        float aValue = a.getAxisValue(axis);
+        float bValue = b.getAxisValue(axis);
+        if (verboseLevel >= 1) {
+          Log.i(TAG, "  "+axis+": "+aValue+" "+(aValue==bValue?"==":"!=")+" "+bValue+" ("+MotionEvent.axisToString(axis)+")");
+          continue;
+        }
+        if (aValue != bValue) {
+          answer = false;
+          if (!(verboseLevel >= 1)) break;
+        }
+      }
+      if (verboseLevel >= 1) Log.i(TAG, "out PointerCoordsEquals(a, b), returning "+answer);
+      return answer;
     }
 
     public static void dump(ArrayList<LogicalMotionEvent> list) {
@@ -570,15 +607,18 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             sb.append(String.format("%52s", "", ""));
           } else {
             //String coordsString = String.format("%.9g,%.9g", e.x[id], e.y[id]);
-            String coordsString = String.format("%.9g,%.9g,%.9g,%.9g", e.x[id], e.y[id], e.pressure[id], e.size[id]);  // don't bother with orientation, it's always +-pi/2
-            //String coordsString = String.format("%.9g,%.9g,%.9g,%.9g,%.9g,%.9g", e.x[id], e.y[id], e.pressure[id], e.size[id], e.relative_x[id], e.relative_y[id]);  // don't bother with orientation, it's always +-pi/2
+            String coordsString = String.format("%.9g,%.9g,%.9g,%.9g", e.x[id], e.y[id], e.pressure[id], e.size[id]);
 
             boolean parenthesized = false;
             if (i >= 1) {
               LogicalMotionEvent ePrev = list.get(i-1);
               if (id < ePrev.x.length && e.x[id] == ePrev.x[id]
                                       && e.y[id] == ePrev.y[id]) {
-                coordsString = "("+coordsString+")";
+                if (PointerCoordsEquals(e.all_axis_values[id], ePrev.all_axis_values[id])) {
+                  coordsString = "["+coordsString+"]";
+                } else {
+                  coordsString = "("+coordsString+")";
+                }
                 parenthesized = true;
               }
             }
@@ -704,7 +744,6 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           int historicalMetaState = unfixed.getMetaState(); // huh? this can't be right, but I don't see any way to query metaState per-history
           for (int index = 0; index < pointerCount; ++index) {
             unfixed.getHistoricalPointerCoords(index, h, pointerCoords[index]);
-            Log.i(TAG, "XXX pointerCoords = "+pointerCoords[index]);
           }
           fixed.addBatch(unfixed.getHistoricalEventTime(h),
                          pointerCoords,
