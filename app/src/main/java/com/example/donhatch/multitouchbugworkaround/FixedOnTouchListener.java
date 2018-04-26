@@ -27,6 +27,13 @@
 //      Q: can I tweak the incoming??
 //         i.e. with setX(), setY(), getHistorical and tweak those... ?
 //
+// Q: what is the first evidence that it's happening?
+//    - sometimes the non-0 pointer begins bugging before the 0 pointer even moves
+//      from its down position, so we have to recognize it-- how?
+//    - seems to always start with the non-0 repeating the thing it's going to get stuck on,
+//      twice or more, while 0-id is still in its down position.
+// Q: what other changes are happening that I'm not tracking, and can I use them to characterize?
+//    - pressure? size? axis? blah blah blah
 // CONJECTURES:
 //  - when it begins, it is always the case that:
 //      - id 0 just went down for the not-first time
@@ -40,14 +47,24 @@
 //    it might take another event or more for other id to settle into the bug)
 //  - the anchor of the other has *not* appeared yet at the moment of 0-down.
 //  - it's its *next* distinct position (after possible repeats of current) (FALSE-- can be 2 after, maybe even more, I'm not sure)
-//  - the first bad non-0-id value is at the end of the first MOVE packet after the POINTER_DOWN(0).
-// Q: what is the first evidence that it's happening?
-//    - sometimes the non-0 pointer begins bugging before the 0 pointer even moves
-//      from its down position, so we have to recognize it-- how?
-//    - seems to always start with the non-0 repeating the thing it's going to get stuck on,
-//      twice or more, while 0-id is still in its down position.
-// Q: what other changes are happening that I'm not tracking, and can I use them to characterize?
-//    -
+//  - the first occurrence of the bad non-0-id value (which doesn't need to be corrected there) is at the end of the first MOVE packet after the POINTER_DOWN(0); and that packet always contains one additional history not equal to the stuck value. (what if that pointer isn't moving, you may ask?  well in that case the bug doesn't happen!)
+//      Wait that's false-- that one historical can have the same value.
+//  - smoking gun: if size,pressure are same as previous but x,y are *not* same as previous, then x,y very likely *should* be same as previous.
+/*
+3.614  805/997:                  {1}                             1: 2492.13,711.506,1.50000,0.323242
+3.617  806/997:           MOVE   {1}                             1: 2490.36,711.062,1.50000,0.323242
+3.622  807/997:                  {1}                             1: 2488.14,710.507,1.50000,0.320801 D
+3.626  808/997:           MOVE   {1}                             1: 2486.14,710.007,1.50000,0.320801
+3.631  809/997:  POINTER_DOWN(0) {0, 1}     0: 2363.18,1045.27,0.587500,0.159180 A  1: 2488.14,710.507,1.50000,0.320801 D
+3.631  810/997:                  {0, 1}     0:(2363.18,1045.27,0.587500,0.159180)A  1: 2483.14,708.508,1.50000,0.317383 E
+3.634  811/997:           MOVE   {0, 1}     0:(2363.18,1045.27,0.587500,0.159180)A  1:(2483.14,708.508,1.50000,0.317383)E
+3.639  812/997:                  {0, 1}     0:(2363.18,1045.27,0.600000,0.162598)A  1:(2483.14,708.508,1.50000,0.317383)E
+3.639  813/997:           MOVE   {0, 1}     0:(2363.18,1045.27,0.600000,0.162598)A  1: 2479.14,706.509,1.48750,0.314941
+3.648  814/997:                  {0, 1}     0:(2363.18,1045.27,0.612500,0.166504)A  1: 2483.14,708.508,1.48750,0.314941 E
+*/
+//  - every time it gives a bad (stuck) x,y, the *correct* value is the *previous* x,y.
+//    the current size,pressure are always (correctly) the same as th size,pressure
+//    from that previous one.
 //
 
 package com.example.donhatch.multitouchbugworkaround;
@@ -214,8 +231,11 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     public float[/*max_id_occurring+1*/] x;
     public float[/*max_id_occurring+1*/] y;
     public float[/*max_id_occurring+1*/] pressure;
+    public float[/*max_id_occurring+1*/] size;
+    // orientation seems to be useless for this analysis; it's always -1.57079637
+    public float[/*max_id_occurring+1*/] orientation;  // useless for 
     // all arrays assumed to be immutable.
-    public LogicalMotionEvent(boolean isHistorical, long eventTimeMillis, int action, int actionId, int ids[], float[] x, float[] y, float[] pressure) {
+    public LogicalMotionEvent(boolean isHistorical, long eventTimeMillis, int action, int actionId, int ids[], float[] x, float[] y, float[] pressure, float[] size, float[] orientation) {
       this.isHistorical = isHistorical;
       this.eventTimeMillis = eventTimeMillis;
       this.action = action;
@@ -224,6 +244,8 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       this.x = x;
       this.y = y;
       this.pressure = pressure;
+      this.size = size;
+      this.orientation = orientation;
     }
     // Breaks motionEvent down into LogicalMotionEvents and appends them to list.
     public static void breakDown(MotionEvent motionEvent, ArrayList<LogicalMotionEvent> list) {
@@ -242,18 +264,24 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         final float[] x = new float[maxIdOccurring+1];
         final float[] y = new float[maxIdOccurring+1];
         final float[] pressure = new float[maxIdOccurring+1];
+        final float[] size = new float[maxIdOccurring+1];
+        final float[] orientation = new float[maxIdOccurring+1];
         for (int id = 0; id < maxIdOccurring+1; ++id) {
           x[id] = Float.NaN;
           y[id] = Float.NaN;
           pressure[id] = Float.NaN;
+          size[id] = Float.NaN;
+          orientation[id] = Float.NaN;
         }
         for (int index = 0; index < pointerCount; ++index) {
           final int id = ids[index]; motionEvent.getPointerId(index);
           x[id] = h==historySize ? motionEvent.getX(index) : motionEvent.getHistoricalX(index, h);
           y[id] = h==historySize ? motionEvent.getY(index) : motionEvent.getHistoricalY(index, h);
           pressure[id] = h==historySize ? motionEvent.getPressure(index) : motionEvent.getHistoricalPressure(index, h);
+          size[id] = h==historySize ? motionEvent.getSize(index) : motionEvent.getHistoricalSize(index, h);
+          orientation[id] = h==historySize ? motionEvent.getOrientation(index) : motionEvent.getHistoricalOrientation(index, h);
         }
-        list.add(new LogicalMotionEvent(h<historySize, eventTimeMillis, action, actionId, ids, x, y, pressure));
+        list.add(new LogicalMotionEvent(h<historySize, eventTimeMillis, action, actionId, ids, x, y, pressure, size, orientation));
       }
     }
 
@@ -384,7 +412,8 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                                 STRINGIFY(e.ids)));
         for (int id = 0; id < e.x.length; ++id) {
           if (!Float.isNaN(e.x[id])) {
-            String coordsString = String.format("%g,%g", e.x[id], e.y[id]);
+            //String coordsString = String.format("%.9g,%.9g", e.x[id], e.y[id]);
+            String coordsString = String.format("%.9g,%.9g,%.9g,%.9g,%.9g", e.x[id], e.y[id], e.pressure[id], e.size[id], e.orientation[id]);
 
             boolean parenthesized = false;
             if (i >= 1) {
