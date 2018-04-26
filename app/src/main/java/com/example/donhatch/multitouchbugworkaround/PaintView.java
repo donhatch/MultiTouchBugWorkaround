@@ -230,6 +230,7 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
     if (action == MotionEvent.ACTION_MOVE) return "MOVE";
     if (action == MotionEvent.ACTION_POINTER_UP) return "POINTER_UP";
     if (action == MotionEvent.ACTION_UP) return "UP";
+    //if (action == MotionEvent.ACTION_CANCEL) return "CANCEL";  // I've never seen this, I don't think
     throw new AssertionError("unrecognized MotionEvent action "+action);
   }
 
@@ -406,7 +407,7 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
             //    - sometimes the non-0 pointer begins bugging before the 0 pointer even moves
             //      from its down position, so we have to recognize it-- how?
             //    - seems to always start with the non-0 repeating the thing it's going to get stuck on,
-            //      twice or more, while 0-id is still in its down position.
+            //      twice or more, //      while 0-id is still in its down position.
             //    
 
 
@@ -515,23 +516,6 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
 
     private ArrayList<LogicalMotionEvent> logicalMotionEventsSinceFirstDown = new ArrayList<LogicalMotionEvent>();
 
-    /*
-      Desired printing:
-        in intercepting onTouch MOVE {0,1}
-          0/2:  0: 1632.4332, 538.626   1: 111.111, 222.222
-          1/2:  0: 3333.3333, 444.444   1: 555.555, 666.666
-          now: 
-        out intercepting onTouch MOVE {0,1}
-        in intercepting onTouch MOVE {0,1}
-          0/2 0:1632.4332,538.626 1:111.111,222.222
-          1/2 0:3333.3333,444.444 1:555.555,666.666
-          now 0:1632.4332,538.626 1:555.555,666.666
-        out intercepting onTouch MOVE {0,1}
-        in intercepting onTouch UP(0) {0,1}
-          now 0:1632.4332,538.626 UP, 1:555.555, 666.666
-        out intercepting onTouch MOVE {0,1}
-    */
-
     final private float[] XXXstartX = new float[MAX_FINGERS];
     final private float[] XXXstartY = new float[MAX_FINGERS];
     final private float[] XXXprevPrevX = new float[MAX_FINGERS];
@@ -543,6 +527,8 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
     private float XXXmaxDeltaY = 0.f;
 
     final int strategy = 0;
+
+    // Framework calls this; constructs a FixedMotionEvent and passes it to onFixedTouch (provided by a subclass).
     @Override
     final public boolean onTouch(View view, MotionEvent unfixed) {
       final int verboseLevel = 1;
@@ -715,10 +701,8 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
 
       if ((action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) && actionId < MAX_FINGERS) {
         mFingerPaths[actionId] = new Path();
-        mFingerCorrectedPaths[actionId] = new Path();
         if (verboseLevel >= 1) Log.i(TAG, "                  starting path "+actionId+": moveTo "+event.getX(actionIndex)+", "+event.getY(actionIndex));
         mFingerPaths[actionId].moveTo(event.getX(actionIndex), event.getY(actionIndex));
-        mFingerCorrectedPaths[actionId].moveTo(event.getX(actionIndex), event.getY(actionIndex));
         startX[actionId] = event.getX(actionIndex);
         startY[actionId] = event.getY(actionIndex);
         prevX[actionId] = startX[actionId];
@@ -737,23 +721,6 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
               final float y = h==historySize ? event.getY(index) : event.getHistoricalY(index, h);
               if (verboseLevel >= 1) Log.i(TAG, "                  adding to path "+id+": lineTo "+x+", "+y+"  (h="+h+"/"+historySize+")");
               mFingerPaths[id].lineTo(x, y);
-              if (calledStrategy == 0) {
-              } else if (calledStrategy == 1) {
-                if (x != startX[id] || y != startY[id]) {
-                  if (verboseLevel >= 1) Log.i(TAG, "                      (and to corrected path)  (h="+h+"/"+historySize+")");
-                  mFingerCorrectedPaths[id].lineTo(x, y);
-                } else {
-                  if (verboseLevel >= 1) Log.i(TAG, "                      (but NOT to corrected path by strategy=1)  (h="+h+"/"+historySize+")");
-                }
-              } else if (calledStrategy == 2) {
-                if (x != prevX[id] || y != prevY[id]) {
-                  if (verboseLevel >= 1) Log.i(TAG, "                      (and to corrected path)  (h="+h+"/"+historySize+")");
-                  mFingerCorrectedPaths[id].lineTo(x, y);
-                } else {
-                  if (verboseLevel >= 1) Log.i(TAG, "                      (but NOT to corrected path by strategy=2)  (h="+h+"/"+historySize+")");
-                }
-              }
-
               if (pointerCount == 2) {
                 boolean omitPerCalledStrategy1 = (x == startX[id] && y == startY[id]);
                 boolean omitPerCalledStrategy2 = (x == prevX[id] && y == prevY[id]);
@@ -780,27 +747,11 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
       if ((action == MotionEvent.ACTION_POINTER_UP || action == MotionEvent.ACTION_UP) && actionId < MAX_FINGERS) {
         if (verboseLevel >= 1) Log.i(TAG, "                  ending path "+actionId+": setLastPoint "+event.getX(actionIndex)+", "+event.getY(actionIndex));
         mFingerPaths[actionId].setLastPoint(event.getX(actionIndex), event.getY(actionIndex));
-        if (calledStrategy == 0) {
-        } else if (calledStrategy == 1) {
-          if (event.getX(actionIndex) != startX[actionId] || event.getY(actionIndex) != startY[actionId]) {
-            mFingerCorrectedPaths[actionId].setLastPoint(event.getX(actionIndex), event.getY(actionIndex));
-          } else {
-            // it doesn't get a last point.  does it matter?
-          }
-        } else if (calledStrategy == 2) {
-          if (event.getX(actionIndex) != prevX[actionId] || event.getY(actionIndex) != prevY[actionId]) {
-            mFingerCorrectedPaths[actionId].setLastPoint(event.getX(actionIndex), event.getY(actionIndex));
-          } else {
-            // it doesn't get a last point.  does it matter?
-          }
-        }
         mCompletedPaths.add(mFingerPaths[actionId]);
-        mCompletedCorrectedPaths.add(mFingerCorrectedPaths[actionId]);
         mFingerPaths[actionId].computeBounds(mPathBounds, true);
         invalidate((int) mPathBounds.left, (int) mPathBounds.top,
             (int) mPathBounds.right, (int) mPathBounds.bottom);
         mFingerPaths[actionId] = null;
-        mFingerCorrectedPaths[actionId] = null;
       }
 
       if (verboseLevel >= 2) Log.i(TAG, "                out PaintView onTouchEvent");
