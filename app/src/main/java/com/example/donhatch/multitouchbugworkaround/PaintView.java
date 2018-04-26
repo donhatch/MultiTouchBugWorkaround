@@ -57,12 +57,12 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
 
   private static final String TAG = MultiTouchBugWorkaroundActivity.class.getSimpleName();
 
-  public static final int MAX_FINGERS = 5;
+  public static final int MAX_FINGERS = 10;
   private Path[] mFingerPaths = new Path[MAX_FINGERS];
-  private Paint mFingerPaint;
-  private Paint mCompletedPaint;
   private Paint[] mFingerPaints;
+
   private ArrayList<Path> mCompletedPaths;
+  private ArrayList<Paint> mCompletedPaints;
   private RectF mPathBounds = new RectF();
   private float[] startX = new float[MAX_FINGERS];
   private float[] startY = new float[MAX_FINGERS];
@@ -79,6 +79,7 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
         @Override
         public void onClick(View button) {
           mCompletedPaths.clear();
+          mCompletedPaints.clear();
           PaintView.this.invalidate();
         }
       });
@@ -99,28 +100,21 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
     Log.i(TAG, "        in PaintView onAttachedToWindow");
     super.onAttachedToWindow();
     mCompletedPaths = new ArrayList<Path>();
-
-    mFingerPaint = new Paint();
-    mFingerPaint.setAntiAlias(true);
-    mFingerPaint.setColor(Color.RED);
-    mFingerPaint.setStyle(Paint.Style.STROKE);
-    mFingerPaint.setStrokeWidth(6);
-    mFingerPaint.setStrokeCap(Paint.Cap.BUTT);
-
-    mCompletedPaint = new Paint();
-    mCompletedPaint.setAntiAlias(true);
-    mCompletedPaint.setColor(Color.BLACK);
-    mCompletedPaint.setStyle(Paint.Style.STROKE);
-    mCompletedPaint.setStrokeWidth(6);
-    mCompletedPaint.setStrokeCap(Paint.Cap.BUTT);
+    mCompletedPaints = new ArrayList<Paint>();
 
     final int colors[] = new int[] {
       Color.RED,
       Color.BLUE,
-      Color.GREEN,
-      Color.CYAN,
+      0xff00c000,  // not quite so jarring green
+      0xffff8000,  // orange
+      0xff8000ff,  // purple
       Color.YELLOW,
+      Color.CYAN,
+      Color.MAGENTA,
+      Color.BLACK,
+      Color.GRAY,
     };
+    CHECK_EQ(colors.length, MAX_FINGERS);
     mFingerPaints = new Paint[MAX_FINGERS];
     for (int i = 0; i < MAX_FINGERS; ++i) {
       mFingerPaints[i] = new Paint();
@@ -129,63 +123,6 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
       mFingerPaints[i].setStyle(Paint.Style.STROKE);
       mFingerPaints[i].setStrokeWidth(6);
       mFingerPaints[i].setStrokeCap(Paint.Cap.BUTT);
-    }
-
-    if (false) {
-      double points[][] = new double[][] {
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1086.6227, 795.4476},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1012.64844, 735.48926},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {921.68, 697.5156},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {808.71924, 687.5225},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-        {1170.5936, 959.3338},
-      };
-      Path path = new Path();
-      path.moveTo((float)points[0][0], (float)points[0][1]);
-      for (int i = 0; i < points.length; ++i) {
-        path.lineTo((float)points[i][0], (float)points[i][1]);
-      }
-      path.setLastPoint((float)points[points.length-1][0], (float)points[points.length-1][1]);
-
-      mCompletedPaths.add(path);
     }
 
     Log.i(TAG, "        out PaintView onAttachedToWindow");
@@ -197,10 +134,12 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
     if (verboseLevel >= 1) Log.i(TAG, "            in PaintView onDraw");
     super.onDraw(canvas);
 
-    for (Path completedPath : mCompletedPaths) {
-      canvas.drawPath(completedPath, mCompletedPaint);
+    CHECK_EQ(mCompletedPaths.size(), mCompletedPaints.size());
+    for (int i = 0; i < mCompletedPaths.size(); ++i) {
+      canvas.drawPath(mCompletedPaths.get(i), mCompletedPaints.get(i));
     }
 
+    CHECK_EQ(mFingerPaths.length, mFingerPaints.length);
     for (int i = 0; i < mFingerPaths.length; ++i) {
       if (mFingerPaths[i] != null) {
           canvas.drawPath(mFingerPaths[i], mFingerPaints[i]);
@@ -284,6 +223,7 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
         if (verboseLevel >= 1) Log.i(TAG, "                  ending path "+actionId+": setLastPoint "+event.getX(actionIndex)+", "+event.getY(actionIndex));
         mFingerPaths[actionId].setLastPoint(event.getX(actionIndex), event.getY(actionIndex));
         mCompletedPaths.add(mFingerPaths[actionId]);
+        mCompletedPaints.add(mFingerPaints[actionId]);
         mFingerPaths[actionId].computeBounds(mPathBounds, true);
         invalidate((int) mPathBounds.left, (int) mPathBounds.top,
             (int) mPathBounds.right, (int) mPathBounds.bottom);

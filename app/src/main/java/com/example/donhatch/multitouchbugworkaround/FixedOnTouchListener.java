@@ -1,3 +1,23 @@
+// CONJECTURES:
+//  - when it begins, it is always the case that:
+//      - id 0 just went down for the not-first time
+//      - exactly one other id is already down (can be 1, or 2, or...)
+//      - the other id may have participated in the bug already, it doesn't matter
+//  - it happens to the two participating ids, for almost exactly as long as both down;
+//    as soon as one of them goes up: it stops happening to 0 (of course),
+//    and the current run of the other is the last one where the bug occurs.
+//  - so the anchor of id 0 is the down position!  And the anchor of the other one
+//    is its value at the moment of that 0-down.  (FALSE-- not at the exact moment;
+//    it might take another event or more for other id to settle into the bug)
+//  - the anchor of the other has *not* appeared yet at the moment of 0-down.
+//  - it's its *next* distinct position (after possible repeats of current) (FALSE-- can be 2 after, maybe even more, I'm not sure)
+// Q: what is the first evidence that it's happening?
+//    - sometimes the non-0 pointer begins bugging before the 0 pointer even moves
+//      from its down position, so we have to recognize it-- how?
+//    - seems to always start with the non-0 repeating the thing it's going to get stuck on,
+//      twice or more, while 0-id is still in its down position.
+//    
+
 package com.example.donhatch.multitouchbugworkaround;
 
 import android.util.Log;
@@ -178,25 +198,6 @@ public abstract class FixedOnTouchListener implements View.OnTouchListener {
 
           // Each sequence of pointer-down,moves,pointer-up is its own label scope.
           //
-          // CONJECTURES:
-          //  - when it begins, it is always the case that:
-          //      - id 0 just went down for the not-first time
-          //      - exactly one other id is already down (can be 1, or 2, or...)
-          //      - the other id may have participated in the bug already, it doesn't matter
-          //  - it happens to the two participating ids, for almost exactly as long as both down;
-          //    as soon as one of them goes up: it stops happening to 0 (of course),
-          //    and the current run of the other is the last one where the bug occurs.
-          //  - so the anchor of id 0 is the down position!  And the anchor of the other one
-          //    is its value at the moment of that 0-down.  (FALSE-- not at the exact moment;
-          //    it might take another event or more for other id to settle into the bug)
-          //  - the anchor of the other has *not* appeared yet at the moment of 0-down.
-          //  - it's its *next* distinct position (after possible repeats of current) (FALSE-- can be 2 after, maybe even more, I'm not sure)
-          // Q: what is the first evidence that it's happening?
-          //    - sometimes the non-0 pointer begins bugging before the 0 pointer even moves
-          //      from its down position, so we have to recognize it-- how?
-          //    - seems to always start with the non-0 repeating the thing it's going to get stuck on,
-          //      twice or more, //      while 0-id is still in its down position.
-          //    
 
 
           for (int i0 = 0; i0 < n;) {
