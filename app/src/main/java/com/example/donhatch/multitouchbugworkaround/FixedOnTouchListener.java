@@ -28,6 +28,12 @@
 //      Q: can I tweak the incoming??
 //         i.e. with setX(), setY(), getHistorical and tweak those... ?
 //
+// Observation:
+//      - when one pointer is down, we never get fully-duplicate MOVE events (i.e. equal on all axes to previous).
+//              (oh wait! we *do* get it if it's id=1... not when it's id=0 though)
+//              (woops not true-- we get it on id=0 too.  ok this is useless)
+//        when multiple pointers down, we sometimes do... but *something* has always changed in some axis of some pointer id.
+
 // Q: what is the first evidence that it's happening?
 //    - sometimes the non-0 pointer begins bugging before the 0 pointer even moves
 //      from its down position, so we have to recognize it-- how?
@@ -594,6 +600,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         StringBuilder sb = new StringBuilder();
         long relativeTimeMillis = e.eventTimeMillis - refTimeMillis;
         if (e.isHistorical) CHECK_EQ(e.action, MotionEvent.ACTION_MOVE);
+        if (e.action==MotionEvent.ACTION_MOVE) CHECK_EQ(e.actionId, e.ids[0]);
         sb.append(String.format("          %3d.%03d %4d/%d: %16s %-"+idsWidth+"s",
                                 relativeTimeMillis/1000,
                                 relativeTimeMillis%1000,
