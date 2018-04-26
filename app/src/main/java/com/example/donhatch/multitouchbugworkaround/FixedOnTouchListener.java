@@ -1,3 +1,30 @@
+//
+// Possible strategies:
+//      1. Make a straightforward wrapper.
+//         Pros:
+//              - don't need to tweak listeners
+//         Cons:
+//              - can't construct using historical data; have to unwrap,
+//                so apps that use it won't be able to exercise historical data
+//      2. Make a tweaked one, using an alternate class FixedMotionEvent.
+//         Cons:
+//              - requires tweaking listeners-- yeah, pretty much a mess
+//              - I'll miss some pieces of the API
+//      3. Provide both?
+//         That is, provide:
+//              FixedOnTouchListener
+//                - is an OnTouchListener
+//                - onTouch creates a FixedMotionEvent and calls subclass-provided onFixedTouch with it
+//              OnTouchListenerBugWorkaroundWrapper
+//                - is an OnTouchListener
+//                - wraps an OnTouchListener, onTouch delegates to its onTouch
+//                      (with historical events turned into main events, since it appears to be impossible to
+//                      create a MotionEvent with historical stuff)
+//                - implemented as a FixedOnTouchListener
+//      OH WAIT!  Does addBatch add historical?  yes!!  so I can do it!
+//      ISSUE: HOVER_MOVE?  don't need to handle it because it isn't a touch event
+//      ISSUE: ACTION_CANCEL? never seen one, but have to handle it.
+//
 // CONJECTURES:
 //  - when it begins, it is always the case that:
 //      - id 0 just went down for the not-first time
@@ -16,7 +43,9 @@
 //      from its down position, so we have to recognize it-- how?
 //    - seems to always start with the non-0 repeating the thing it's going to get stuck on,
 //      twice or more, while 0-id is still in its down position.
-//    
+// Q: what other changes are happening that I'm not tracking, and can I use them to characterize?
+//    -
+//
 
 package com.example.donhatch.multitouchbugworkaround;
 
@@ -436,11 +465,39 @@ public abstract class FixedOnTouchListener implements View.OnTouchListener {
         prevYcorrected[id] = yCorrected;
       }
     }
-    // CBB: reuse the same FixedMotionEvent each time
-    FixedMotionEvent fixedMotionEvent = new FixedMotionEvent(unfixed,
-                                                             historicalAndActualX,
-                                                             historicalAndActualY);
-    final boolean answer = onFixedTouch(view, fixedMotionEvent);
+
+    boolean answer;
+    if (false) {
+      // Use this one
+      // obtain(long downTime, long eventTime, int action, int pointerCount, PointerProperties[] pointerProperties, PointerCoords[] pointerCoords, int metaState, int buttonState, float xPrecision, float yPrecision, int deviceId, int edgeFlags, int source, int flags)
+      // and use addBatch to create the historical stuff.
+
+      /*
+      MotionEvent motionEvent = motionEvent.obtain(
+          downTime,
+          eventTime,
+          action,
+          pointerCount,
+          pointerProperties,
+          pointerCoords,
+          metaState,
+          buttonState,
+          xPrecision,
+          yPrecision,
+          deviceId,
+          edgeFlags,
+          source,
+          flags);
+      }
+      */
+      answer = false;
+    } else {  // previous way, before I knew how to obtain
+      // CBB: reuse the same FixedMotionEvent each time
+      FixedMotionEvent fixedMotionEvent = new FixedMotionEvent(unfixed,
+                                                               historicalAndActualX,
+                                                               historicalAndActualY);
+      answer = onFixedTouch(view, fixedMotionEvent);
+    }
 
 
     {
@@ -460,6 +517,6 @@ public abstract class FixedOnTouchListener implements View.OnTouchListener {
     if (verboseLevel >= 1) Log.i(TAG, "    out intercepting onTouch, returning "+answer);
     return answer;
   }  // onTouch
-  abstract public boolean onFixedTouch(View view, FixedMotionEvent fixedMotionEvent);
+  abstract protected boolean onFixedTouch(View view, FixedMotionEvent fixedMotionEvent);
 }
 
