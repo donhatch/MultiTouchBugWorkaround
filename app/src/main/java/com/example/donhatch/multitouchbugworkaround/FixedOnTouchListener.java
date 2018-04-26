@@ -1,5 +1,3 @@
-//
-// Possible strategies:
 //      1. Make a straightforward wrapper.
 //         Pros:
 //              - don't need to tweak listeners
@@ -51,6 +49,7 @@
 //  - the first occurrence of the bad non-0-id value (which doesn't need to be corrected there) is at the end of the first MOVE packet after the POINTER_DOWN(0); and that packet always contains one additional history not equal to the stuck value. (what if that pointer isn't moving, you may ask?  well in that case the bug doesn't happen!)
 //      Wait that's false-- that one historical can have the same value.
 //  - smoking gun: if size,pressure are same as previous but x,y are *not* same as previous, then x,y very likely *should* be same as previous.
+//    on the other hand, if size,pressure are *not* same as previous, then this particular x,y isn't being affected by the bug.
 /*
 3.614  805/997:                  {1}                             1: 2492.13,711.506,1.50000,0.323242
 3.617  806/997:           MOVE   {1}                             1: 2490.36,711.062,1.50000,0.323242
@@ -66,7 +65,7 @@
 //  - every time it gives a bad (stuck) x,y, the *correct* value is the *previous* x,y.
 //    the current size,pressure are always (correctly) the same as th size,pressure
 //    from that previous one.
-// Ooh important-- the bug can persist on the 0 id for a short time after one of the participating ids went UP!
+// Ooh important-- the bug can persist on the 0 id for a short time after one of the participating ids went UP!  In fact it lasted for 2 logical events!  Seems there's little we can say
 /*
 8.973 1514/1552:                  {0, 1}  0:(1614.43945,884.385803,1.48750007,0.250976563,-1.57079637)A   1:(2393.16919,686.523193,1.28750002,0.237792969,-1.57079637)A
 8.973 1515/1552:           MOVE   {0, 1}  0:(1614.43945,884.385803,1.48750007,0.250976563,-1.57079637)A   1:(2393.16919,686.523193,1.23750007,0.238769531,-1.57079637)A
@@ -85,6 +84,12 @@
 2.640  523/574:                  {1}                          1: 2193.23853,510.645386,1.47500002,0.258789063,-1.57079637
 2.648  524/574:           MOVE   {1}                          1: 2193.23853,510.177124,1.47500002,0.258789063,-1.57079637
 */
+// Correlation with timestamp:
+//      - on id 0, when it affects x,y, timestamp has typically *not* advanced, but once in a while it has advanced (not consistent)
+//      - on id non-0, when it affects x,y, timestamp has typically (I think maybe always?)  advanced by 8 or 9 ms
+//        (except when it happened on 0's POINTER_UP, in which case there was no time-advace. argh!), in which case there was no time-advace. argh!)
+// Correlation with packet boundaries:
+//      - none.
 //
 
 package com.example.donhatch.multitouchbugworkaround;
@@ -423,6 +428,10 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       //        - known to be bugging
       //        - known to be safe or safe soon (0 or idOfInterest went UP)
       int idOfInterest = -1; // never zero.  if positive, either might be bugging or definitely bugging.
+      float xOfInterestForId0 = Float.NaN;  // if non-nan, might be bugging or definitely bugging.
+      float yOfInterestForId0 = Float.NaN;  // if non-nan, might be bugging or definitely bugging.
+      float xOfInterestForIdNonzero = Float.NaN;
+      float yOfInterestForIdNonzero = Float.NaN;
       boolean knownToBeSafe = true;  // actually the same as idOfInterest==-1
       boolean knownToBeBugging = false;
 
@@ -438,6 +447,23 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           knownToBeSafe = false;
           knownToBeBugging = false;
           idOfInterest = e.ids[1];
+          xOfInterestForId0 = e.x[0];
+          yOfInterestForId0 = e.y[0];
+          xOfInterestForIdNonzero = Float.NaN;
+          yOfInterestForIdNonzero = Float.NaN;
+        }
+        // And the very next packet seems to always have size 2,
+        // and the last (primary) entry in it is the buggy non-0-id item, if any
+        if (i >= 2) {
+          LogicalMotionEvent ePrevPrev = list.get(i-2);
+          LogicalMotionEvent ePrev = list.get(i-1);
+          if (ePrevPrev.action == MotionEvent.ACTION_POINTER_DOWN
+           && ePrevPrev.actionId == 0
+           && ePrevPrev.ids.length == 2) {
+            CHECK_GE(idOfInterest, 0);
+            xOfInterestForIdNonzero = e.x[idOfInterest];
+            yOfInterestForIdNonzero = e.y[idOfInterest];
+          }
         }
 
         StringBuilder sb = new StringBuilder();
@@ -493,9 +519,21 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                 }
               }
 
-              if (knownToBeSafe
-               || (id != 0 && id != idOfInterest)) {  // those are the only suspects
-                 foundSmokingGun = false;
+              if (knownToBeSafe) {
+                //Log.i(TAG, "    KILLING QUESTION MARK on "+id+" BECAUSE knownToBeSafe");
+                foundSmokingGun = false;
+              }
+              if (id != 0 && id != idOfInterest) { // those are the only suspects
+                //Log.i(TAG, "    KILLING QUESTION MARK on "+id+" BECAUSE not a suspect");
+                foundSmokingGun = false;
+              }
+              if (id == 0 && (e.x[0] != xOfInterestForId0 || e.y[0] != yOfInterestForId0)) {  // id 0 only bugs on the coords on which it went down
+                //Log.i(TAG, "    KILLING QUESTION MARK on "+id+" BECAUSE the 0 suepect and not the coords on which it went down");
+                foundSmokingGun = false;
+              }
+              if (id != 0 && (e.x[id] != xOfInterestForIdNonzero || e.y[id] != yOfInterestForIdNonzero)) {  // id nonzero only bugs on those coords. when not decided yet, it doesn't bug
+                //Log.i(TAG, "    KILLING QUESTION MARK on "+id+" BECAUSE the nonzero suspect and not the coords two after the POINTER_DOWN(0) event which are "+xOfInterestForIdNonzero+","+yOfInterestForIdNonzero+"");
+                foundSmokingGun = false;
               }
 
 
