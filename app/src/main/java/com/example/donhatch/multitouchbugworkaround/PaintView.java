@@ -143,8 +143,16 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
 
 
   class MyTouchListener implements View.OnTouchListener {
+    private FixedOnTouchListener.OnTouchListener2 onTouchListener2 = new MyTouchListener2();
     @Override
-    public boolean onTouch(View view, MotionEvent event) {
+    public boolean onTouch(View view, MotionEvent touchEvent) {
+      return onTouchListener2.onTouch(view, null, touchEvent);
+    }
+  }
+  class MyTouchListener2 implements FixedOnTouchListener.OnTouchListener2 {
+    @Override
+    public boolean onTouch(View view, MotionEvent unfixed, MotionEvent fixed) {
+      final MotionEvent event = fixed; // XXX
 
       final int verboseLevel = 0;  // 0:nothing, 1: in, 2: and out and more detail
       int pointerCount = event.getPointerCount();

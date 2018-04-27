@@ -3,6 +3,13 @@
 // https://android-review.googlesource.com/c/platform/frameworks/native/+/640606/
 //
 //
+// TODO: reconcile annotations
+// TODO: be able to actually play back the stuff parsed from a dump file:
+//   - be able to convert from LogicalMotionEvent(s) to MotionEvent
+// TODO: dump to a file instead of logcat, so it's not subject to size and rate constraints
+// TODO: ui buttons to switch between correctd and not (how?)
+// TODO: maybe allow hooking up *two* real listeners to the FixedListener?  and/or a listener that takes both?  the latter would be easiest to use.
+
 // BUG: See BAD00-- still not fixed
 //
 // BUG: apparently the following gets snargled up:  the condition isn't quite right when there are two POINTER_DOWNs at the same time.
@@ -191,10 +198,21 @@ import static com.example.donhatch.multitouchbugworkaround.STRINGIFY.STRINGIFY;
 
 public class FixedOnTouchListener implements View.OnTouchListener {
 
-  private View.OnTouchListener wrapped;
+  public interface OnTouchListener2 {
+    public boolean onTouch(View view, MotionEvent unfixed, MotionEvent fixed);
+  }
 
-  public FixedOnTouchListener(View.OnTouchListener wrapped) {
-    this.wrapped = wrapped;
+  // TODO: constructors for these?  not sure
+  public View.OnTouchListener wrappedForUnfixed = null;
+  public OnTouchListener2 wrappedForUnfixedAndFixed = null;
+  public View.OnTouchListener wrappedForFixed = null;
+
+  public FixedOnTouchListener(View.OnTouchListener wrappedForFixed) {
+    this.wrappedForFixed = wrappedForFixed;
+  }
+
+  public FixedOnTouchListener(OnTouchListener2 wrappedForUnfixedAndFixed) {
+    this.wrappedForUnfixedAndFixed = wrappedForUnfixedAndFixed;
   }
 
   private static final String TAG = MultiTouchBugWorkaroundActivity.class.getSimpleName();  // XXX
@@ -1093,7 +1111,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
 
     LogicalMotionEvent.breakDown(unfixed, logicalMotionEventsSinceFirstDown);  // for post-mortem analysis
 
-    boolean answer;
+    boolean answer = false;
     {
       final int pointerCount = unfixed.getPointerCount();
       final int historySize = unfixed.getHistorySize();
@@ -1146,8 +1164,9 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           }
         }
         LogicalMotionEvent.breakDown(fixed, fixedLogicalMotionEventsSinceFirstDown);  // for post-mortem analysis
-        answer = wrapped.onTouch(view, fixed);
-        //answer = wrapped.onTouch(view, unfixed);
+        if (wrappedForUnfixed != null) answer = wrappedForUnfixed.onTouch(view, unfixed);
+        if (wrappedForUnfixedAndFixed != null) answer = wrappedForUnfixedAndFixed.onTouch(view, unfixed, fixed);  // clobbers previous answer if any
+        if (wrappedForFixed != null) answer = wrappedForFixed.onTouch(view, fixed);  // clobbers previous answer if any
       } finally {
         if (fixed != null) {
           fixed.recycle();
