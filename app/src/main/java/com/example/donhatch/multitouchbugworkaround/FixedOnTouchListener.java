@@ -386,33 +386,21 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     public int action;
     public int actionId;
     public int ids[];
-    public float[/*max_id_occurring+1*/] x;
-    public float[/*max_id_occurring+1*/] y;
-    public float[/*max_id_occurring+1*/] pressure;
-    public float[/*max_id_occurring+1*/] size;
-    // orientation seems to be useless for this analysis; it's always +-1.57079637
-    public float[/*max_id_occurring+1*/] orientation;
-    // dammit! relative_x,relative_y always zero.
-    public float[/*ditto*/] relative_x;
-    public float[/*ditto*/] relative_y;
-    // oh screw this, get them all!
     public MotionEvent.PointerCoords[] all_axis_values;
-    // rawX()/rawY() doesn't seem to be helpful: (1) can't query it per-history nor per-pointer, (2) the bug apparently affects this too so it doesn't give any clues
+
+    // Convenience accessors for the commonly used ones
+    public float x(int id) { return all_axis_values[id].getAxisValue(MotionEvent.AXIS_X); }
+    public float y(int id) { return all_axis_values[id].getAxisValue(MotionEvent.AXIS_Y); }
+    public float pressure(int id) { return all_axis_values[id].getAxisValue(MotionEvent.AXIS_PRESSURE); }
+    public float size(int id) { return all_axis_values[id].getAxisValue(MotionEvent.AXIS_SIZE); }
 
     // all arrays assumed to be immutable.
-    public LogicalMotionEvent(boolean isHistorical, long eventTimeMillis, int action, int actionId, int ids[], float[] x, float[] y, float[] pressure, float[] size, float[] orientation, float[] relative_x, float[] relative_y, MotionEvent.PointerCoords[] all_axis_values) {
+    public LogicalMotionEvent(boolean isHistorical, long eventTimeMillis, int action, int actionId, int ids[], MotionEvent.PointerCoords[] all_axis_values) {
       this.isHistorical = isHistorical;
       this.eventTimeMillis = eventTimeMillis;
       this.action = action;
       this.actionId = actionId;
       this.ids = ids;
-      this.x = x;
-      this.y = y;
-      this.pressure = pressure;
-      this.size = size;
-      this.orientation = orientation;
-      this.relative_x = relative_x;
-      this.relative_y = relative_y;
       this.all_axis_values = all_axis_values;
     }
     // Breaks motionEvent down into LogicalMotionEvents and appends them to list.
@@ -423,9 +411,9 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       final int historySize = motionEvent.getHistorySize();
       final int[] ids = new int[pointerCount];
       int maxIdOccurring = -1;
-      for (int i = 0; i < pointerCount; ++i) {
-        ids[i] = motionEvent.getPointerId(i);
-        maxIdOccurring = Math.max(maxIdOccurring, ids[i]);
+      for (int index = 0; index < pointerCount; ++index) {
+        ids[index] = motionEvent.getPointerId(index);
+        maxIdOccurring = Math.max(maxIdOccurring, ids[index]);
       }
       for (int h = 0; h < historySize+1; ++h) {
         final long eventTimeMillis = h==historySize ? motionEvent.getEventTime() : motionEvent.getHistoricalEventTime(h);
@@ -433,39 +421,23 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         final float[] y = new float[maxIdOccurring+1];
         final float[] pressure = new float[maxIdOccurring+1];
         final float[] size = new float[maxIdOccurring+1];
-        final float[] orientation = new float[maxIdOccurring+1];
-        final float[] relative_x = new float[maxIdOccurring+1];
-        final float[] relative_y = new float[maxIdOccurring+1];
         final MotionEvent.PointerCoords[] all_axis_values = new MotionEvent.PointerCoords[maxIdOccurring+1];
         for (int id = 0; id < maxIdOccurring+1; ++id) {
-          x[id] = Float.NaN;
-          y[id] = Float.NaN;
-          pressure[id] = Float.NaN;
-          size[id] = Float.NaN;
-          orientation[id] = Float.NaN;
-          relative_x[id] = Float.NaN;
-          relative_y[id] = Float.NaN;
           all_axis_values[id] = new MotionEvent.PointerCoords();
         }
         for (int index = 0; index < pointerCount; ++index) {
-          final int id = ids[index]; motionEvent.getPointerId(index);
-          x[id] = h==historySize ? motionEvent.getX(index) : motionEvent.getHistoricalX(index, h);
-          y[id] = h==historySize ? motionEvent.getY(index) : motionEvent.getHistoricalY(index, h);
-          pressure[id] = h==historySize ? motionEvent.getPressure(index) : motionEvent.getHistoricalPressure(index, h);
-          size[id] = h==historySize ? motionEvent.getSize(index) : motionEvent.getHistoricalSize(index, h);
-          orientation[id] = h==historySize ? motionEvent.getOrientation(index) : motionEvent.getHistoricalOrientation(index, h);
-          CHECK_EQ(Math.abs(orientation[id]), 1.57079637f);  // XXX not sure if this is reliable on all devices, but it's what I always get
-          relative_x[id] = h==historySize ? motionEvent.getAxisValue(MotionEvent.AXIS_RELATIVE_X,index) : motionEvent.getHistoricalAxisValue(MotionEvent.AXIS_RELATIVE_X, index, h);
-          relative_y[id] = h==historySize ? motionEvent.getAxisValue(MotionEvent.AXIS_RELATIVE_Y,index) : motionEvent.getHistoricalAxisValue(MotionEvent.AXIS_RELATIVE_Y, index, h);
-          CHECK_EQ(Math.abs(relative_x[id]), 0.f);  // XXX not sure if this is reliable on all devices, but it's what I always get
-          CHECK_EQ(Math.abs(relative_y[id]), 0.f);  // XXX not sure if this is reliable on all devices, but it's what I always get
+          final int id = ids[index];
           if (h==historySize) {
             motionEvent.getPointerCoords(index, all_axis_values[id]);
           } else {
             motionEvent.getHistoricalPointerCoords(index, h, all_axis_values[id]);
           }
+          CHECK_EQ(Math.abs(all_axis_values[id].getAxisValue(MotionEvent.AXIS_ORIENTATION)), 1.57079637f);  // XXX not sure if this is reliable on all devices, but it's what I always get
+          CHECK_EQ(all_axis_values[id].getAxisValue(MotionEvent.AXIS_RELATIVE_X), 0.f);  // XXX not sure if this is reliable on all devices, but it's what I always get
+          CHECK_EQ(all_axis_values[id].getAxisValue(MotionEvent.AXIS_RELATIVE_Y), 0.f);  // XXX not sure if this is reliable on all devices, but it's what I always get
+          // also, rawX()/rawY() doesn't seem to be helpful: (1) can't query it per-history nor per-pointer, (2) the bug apparently affects this too so it doesn't give any clues
         }
-        list.add(new LogicalMotionEvent(h<historySize, eventTimeMillis, action, actionId, ids, x, y, pressure, size, orientation, relative_x, relative_y, all_axis_values));
+        list.add(new LogicalMotionEvent(h<historySize, eventTimeMillis, action, actionId, ids, all_axis_values));
       }
     }
 
@@ -535,8 +507,8 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           String[] index2fingerprint = new String[n];  // nulls initially
           for (int i = 0; i < n; ++i) {
             LogicalMotionEvent e = list.get(i);
-            if (id < e.x.length && !Float.isNaN(e.x[id])) {
-              String fingerprint = e.x[id]+","+e.y[id];
+            if (id < e.all_axis_values.length && !Float.isNaN(e.x(id))) {
+              String fingerprint = e.x(id)+","+e.y(id);
               index2fingerprint[i] = fingerprint;
             }
           }
@@ -629,8 +601,8 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           knownToBeSafe = false;
           knownToBeBugging = false;
           idOfInterest = e.ids[1];
-          xOfInterestForId0 = e.x[0];
-          yOfInterestForId0 = e.y[0];
+          xOfInterestForId0 = e.x(0);
+          yOfInterestForId0 = e.y(0);
           xOfInterestForIdNonzero = Float.NaN;
           yOfInterestForIdNonzero = Float.NaN;
           justNowGotCoordsOfInterestForId0 = true;
@@ -646,9 +618,9 @@ public class FixedOnTouchListener implements View.OnTouchListener {
            && ePrevPrev.ids.length == 2
            && ePrev.action == MotionEvent.ACTION_MOVE) {
             CHECK_GE(idOfInterest, 0);
-            CHECK_LT(idOfInterest, e.x.length);
-            xOfInterestForIdNonzero = e.x[idOfInterest];
-            yOfInterestForIdNonzero = e.y[idOfInterest];
+            CHECK_LT(idOfInterest, e.all_axis_values.length);
+            xOfInterestForIdNonzero = e.x(idOfInterest);
+            yOfInterestForIdNonzero = e.y(idOfInterest);
             justNowGotCoordsOfInterestForIdNonzero = true;
           }
         }
@@ -664,19 +636,19 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                                 (e.action==MotionEvent.ACTION_MOVE && e.isHistorical ? "" :
                                 (actionToString(e.action)+(e.action==MotionEvent.ACTION_MOVE?"  ":"("+e.actionId+")"))),
                                 STRINGIFY(e.ids)));
-        for (int id = 0; id < e.x.length; ++id) {
-          if (Float.isNaN(e.x[id])) {
+        for (int id = 0; id < e.all_axis_values.length; ++id) {
+          if (Float.isNaN(e.x(id))) {
             //sb.append(String.format("%29s", ""));
             sb.append(String.format("%52s", "", ""));
           } else {
-            //String coordsString = String.format("%.9g,%.9g", e.x[id], e.y[id]);
-            String coordsString = String.format("%.9g,%.9g,%.9g,%.9g", e.x[id], e.y[id], e.pressure[id], e.size[id]);
+            //String coordsString = String.format("%.9g,%.9g", e.x(id), e.y(id));
+            String coordsString = String.format("%.9g,%.9g,%.9g,%.9g", e.x(id), e.y(id), e.pressure(id), e.size(id));
 
             boolean parenthesized = false;
             if (i >= 1) {
               LogicalMotionEvent ePrev = list.get(i-1);
-              if (id < ePrev.x.length && e.x[id] == ePrev.x[id]
-                                      && e.y[id] == ePrev.y[id]) {
+              if (id < ePrev.all_axis_values.length && e.x(id) == ePrev.x(id)
+                                      && e.y(id) == ePrev.y(id)) {
                 if (PointerCoordsEquals(e.all_axis_values[id], ePrev.all_axis_values[id])) {
                   coordsString = "["+coordsString+"]";
                 } else {
@@ -707,11 +679,11 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                 LogicalMotionEvent ePrev = list.get(i-1);
                 // XXX this type need not be MOVE in order for bug to manifest..  must previous type be MOVE in order for bug to manifest?
 
-                if (id < ePrev.x.length
-                 && e.pressure[id] == ePrev.pressure[id]
-                 && e.size[id] == ePrev.size[id]
-                 //&& (e.x[id] != ePrev.x[id] || e.y[id] != ePrev.y[id])   // XXX wrong!  need to be comparing with previous *corrected*
-                 && (e.x[id] != mostRecentNonSuspiciousX[id] || e.y[id] != mostRecentNonSuspiciousY[id])   // XXX wrong!  need to be comparing with previous *corrected*
+                if (id < ePrev.all_axis_values.length
+                 && e.pressure(id) == ePrev.pressure(id)
+                 && e.size(id) == ePrev.size(id)
+                 //&& (e.x(id) != ePrev.x(id) || e.y(id) != ePrev.y(id))   // XXX wrong!  need to be comparing with previous *corrected*
+                 && (e.x(id) != mostRecentNonSuspiciousX[id] || e.y(id) != mostRecentNonSuspiciousY[id])   // XXX wrong!  need to be comparing with previous *corrected*
                  ) {
                   foundSmokingGun = true;
                 }
@@ -725,18 +697,18 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                 //Log.i(TAG, "    KILLING QUESTION MARK on "+id+" BECAUSE not a suspect");
                 foundSmokingGun = false;
               }
-              if (id == 0 && (e.x[0] != xOfInterestForId0 || e.y[0] != yOfInterestForId0)) {  // id 0 only bugs on the coords on which it went down
+              if (id == 0 && (e.x(0) != xOfInterestForId0 || e.y(0) != yOfInterestForId0)) {  // id 0 only bugs on the coords on which it went down
                 //Log.i(TAG, "    KILLING QUESTION MARK on "+id+" BECAUSE the 0 suepect and not the coords on which it went down");
                 foundSmokingGun = false;
               }
-              if (id != 0 && (e.x[id] != xOfInterestForIdNonzero || e.y[id] != yOfInterestForIdNonzero)) {  // id nonzero only bugs on those coords. when not decided yet, it doesn't bug
+              if (id != 0 && (e.x(id) != xOfInterestForIdNonzero || e.y(id) != yOfInterestForIdNonzero)) {  // id nonzero only bugs on those coords. when not decided yet, it doesn't bug
                 //Log.i(TAG, "    KILLING QUESTION MARK on "+id+" BECAUSE the nonzero suspect and not the coords two after the POINTER_DOWN(0) event which are "+xOfInterestForIdNonzero+","+yOfInterestForIdNonzero+"");
                 foundSmokingGun = false;
               }
 
               if (!foundSmokingGun) {
-                mostRecentNonSuspiciousX[id] = e.x[id];
-                mostRecentNonSuspiciousY[id] = e.y[id];
+                mostRecentNonSuspiciousX[id] = e.x(id);
+                mostRecentNonSuspiciousY[id] = e.y(id);
               }
 
               if (id==0 && justNowGotCoordsOfInterestForId0) {
@@ -762,7 +734,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       final String[] lines = dump.split("\n");
       for (final String line : lines) {
       //...
-        //answer.add(new LogicalMotionEvent(h<historySize, eventTimeMillis, action, actionId, ids, x, y, pressure, size, orientation, relative_x, relative_y, all_axis_values));
+        //answer.add(new LogicalMotionEvent(h<historySize, eventTimeMillis, action, actionId, ids, x, y, pressure, size, all_axis_values));
       }
       return null; // XXX
     }  // parseDump
