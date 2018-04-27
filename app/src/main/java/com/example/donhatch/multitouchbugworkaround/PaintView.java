@@ -71,15 +71,15 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
       @Override
       public boolean onTouch(View view, MotionEvent fixedEvent) {
         // Record the fixed event.
-        applyEventToStuff(fixedEvent, fixedStuff);
+        applyEventToStuff(fixedEvent, fixedStuff, /*thisStuffIsVisible=*/mShowUnfixed);
         return true;
       }
     }) {
       @Override
       public boolean onTouch(View view, MotionEvent unfixedEvent) {
         // We first get the event, with the bug, here.
-        // Record it.
-        applyEventToStuff(unfixedEvent, unfixedStuff);
+        // Record it...
+        applyEventToStuff(unfixedEvent, unfixedStuff, /*thisStuffIsVisible=*/!mShowUnfixed);
         // Then pass it through to the FixedOnTouchListener,
         // which creates a fixed event which is passed
         // to our OnTouchListener's onTouch() above.
@@ -155,7 +155,7 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
       canvas.drawPath(stuff.mPaths.get(i), stuff.mCompletedPaints.get(i));
     }
   }
-  private void applyEventToStuff(MotionEvent event, Stuff stuff) {
+  private void applyEventToStuff(MotionEvent event, Stuff stuff, boolean thisStuffIsVisible) {
 
     final int verboseLevel = 0;
 
@@ -197,25 +197,31 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
           if (id < MAX_FINGERS && stuff.mFingerPaths[id] != null) {
             final float x = h==historySize ? event.getX(index) : event.getHistoricalX(index, h);
             final float y = h==historySize ? event.getY(index) : event.getHistoricalY(index, h);
-            if (verboseLevel >= 1) Log.i(TAG, "                  adding to path "+id+": lineTo "+x+", "+y+"  (h="+h+"/"+historySize+")");
-            stuff.mFingerPaths[id].lineTo(x, y);
-            if (pointerCount == 2) {
-              boolean omitPerCalledStrategy1 = (x == stuff.startX[id] && y == stuff.startY[id]);
-              boolean omitPerCalledStrategy2 = (x == stuff.prevX[id] && y == stuff.prevY[id]);
-              if (verboseLevel >= 1) Log.i(TAG, "                      omitPerCalledStrategy1 = "+omitPerCalledStrategy1);
-              if (verboseLevel >= 1) Log.i(TAG, "                      omitPerCalledStrategy2 = "+omitPerCalledStrategy2);
-
-              //CHECK(!omitPerCalledStrategy1 || omitPerCalledStrategy2);
-              if (omitPerCalledStrategy1 && !omitPerCalledStrategy2) {
-                // happens sometimes... only just after starting a path or something?
-                if (verboseLevel >= 1) Log.i(TAG, "                      HEY!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            if (x != stuff.prevX[id] || y != stuff.prevY[id]) {
+              if (verboseLevel >= 1) Log.i(TAG, "                  adding to path "+id+": lineTo "+x+", "+y+"  (h="+h+"/"+historySize+")");
+              stuff.mFingerPaths[id].lineTo(x, y);
+              if (thisStuffIsVisible) {
+                if (false) {
+                  // Overkill
+                  stuff.mFingerPaths[id].computeBounds(mPathBounds, true);
+                  invalidate((int) mPathBounds.left, (int) mPathBounds.top,
+                      (int) mPathBounds.right, (int) mPathBounds.bottom);
+                } else if (false){
+                  // CBB: actually probably need to add half line width in all directions.
+                  // But I'm not sure this selective invalidation actually does anything;
+                  // I think it's the same as calling invalidate() with no args.
+                  invalidate((int)Math.min(stuff.prevX[id], x),
+                             (int)Math.min(stuff.prevY[id], y),
+                             (int)Math.max(stuff.prevX[id], x),
+                             (int)Math.max(stuff.prevY[id], y));
+                } else {
+                  // This seems to be adequate.  (?!)
+                  invalidate(10,10, 11,11);
+                }
               }
+              stuff.prevX[id] = x;
+              stuff.prevY[id] = y;
             }
-            stuff.prevX[id] = x;
-            stuff.prevY[id] = y;
-            stuff.mFingerPaths[id].computeBounds(mPathBounds, true);
-            invalidate((int) mPathBounds.left, (int) mPathBounds.top,
-                (int) mPathBounds.right, (int) mPathBounds.bottom);
           }
         }
       }
@@ -231,26 +237,4 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
     }
   }  // applyEventToStuff
 
-
-  class MyTouchListener implements View.OnTouchListener {
-    private FixedOnTouchListener.OnTouchListener2 onTouchListener2 = new MyTouchListener2();
-    @Override
-    public boolean onTouch(View view, MotionEvent touchEvent) {
-      return onTouchListener2.onTouch(view, null, touchEvent);
-    }
-  }
-
-
-  class MyTouchListener2 implements FixedOnTouchListener.OnTouchListener2 {
-    @Override
-    public boolean onTouch(View view_unused, MotionEvent unfixedEvent, MotionEvent fixedEvent) {
-      final int verboseLevel = 0;  // 0:nothing, 1: in, 2: and out and more detail
-
-      if (unfixedEvent != null) applyEventToStuff(unfixedEvent, unfixedStuff);
-      if (fixedEvent != null) applyEventToStuff(fixedEvent, fixedStuff);
-
-      return true;
-    }
-
-  }
 }
