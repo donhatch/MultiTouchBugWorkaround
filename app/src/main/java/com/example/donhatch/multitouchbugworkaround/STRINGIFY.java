@@ -24,6 +24,25 @@ public class STRINGIFY {
       }
       sb.append("}");
       return sb.toString();
+    } else if (x instanceof java.util.Map) {
+      StringBuilder sb = new StringBuilder("{");
+      java.util.Map map = (java.util.Map)x;
+      /*  XXX why doesn't this compile?
+      for (java.util.Map.Entry<Object,Object> kv : map.entrySet()) {
+        sb.append(STRINGIFY(kv.getKey()));
+        sb.append(":");
+        sb.append(STRINGIFY(kv.getValue()));
+      }
+      */
+      for (Object key : map.keySet()) {
+        if (sb.length() != 1) sb.append(", ");
+        Object value = map.get(key);
+        sb.append(STRINGIFY(key));
+        sb.append(":");
+        sb.append(STRINGIFY(value));
+      }
+      sb.append("}");
+      return sb.toString();
     } else {
       // Int, Double, Bool, and everything else falls into this case
       return x.toString();
