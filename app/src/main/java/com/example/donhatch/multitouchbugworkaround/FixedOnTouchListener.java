@@ -1231,54 +1231,54 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         unfixed.getPointerProperties(index, pointerProperties[index]);
       }
 
-      // Need to correct the pointer coords in history order,
-      // before creating the fixed motion event,
-      // since the args to obtaining the motion event include the last (i.e. non-historical) sub-event of the history.
-      // TODO: actually that turned out to be not true!  The truth is, obtain() takes the first historical, and should addBatch the remaining historical and the primary.
-      final MotionEvent.PointerCoords[][] pointerCoords = new MotionEvent.PointerCoords[historySize+1][pointerCount];  // CBB: reuse
-      for (int h = 0; h < historySize+1; ++h) {
-        for (int index = 0; index < pointerCount; ++index) {
-          pointerCoords[h][index] = new MotionEvent.PointerCoords();
-          if (h==historySize) {
-            unfixed.getPointerCoords(index, pointerCoords[h][index]);
-          } else {
-            unfixed.getHistoricalPointerCoords(index, h, pointerCoords[h][index]);
-          }
-        }
-        long subEventTime = h==historySize ? unfixed.getEventTime() : unfixed.getHistoricalEventTime(h);
-        correctPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords[h]);
-      }
-      MotionEvent fixed = MotionEvent.obtain(
-          unfixed.getDownTime(),
-          0==historySize ? unfixed.getEventTime() : unfixed.getHistoricalEventTime(0),
-          unfixed.getAction(),  // not getActionMasked(), apparently
-          pointerCount,
-          pointerProperties,
-          pointerCoords[0],   // first historical goes first!
-          unfixed.getMetaState(),
-          unfixed.getButtonState(),
-          unfixed.getXPrecision(),
-          unfixed.getYPrecision(),
-          unfixed.getDeviceId(),
-          unfixed.getEdgeFlags(),
-          unfixed.getSource(),
-          unfixed.getFlags());
+      final MotionEvent.PointerCoords[] pointerCoords = new MotionEvent.PointerCoords[pointerCount];  // CBB: reuse
+      MotionEvent fixed = null;
       try {
-        CHECK_EQ(fixed.getAction(), unfixed.getAction());
-        CHECK_EQ(fixed.getActionMasked(), unfixed.getActionMasked());
-        CHECK_EQ(fixed.getActionIndex(), unfixed.getActionIndex());
-        for (int h = 1; h < historySize+1; ++h) {
+        for (int h = 0; h < historySize+1; ++h) {
+          for (int index = 0; index < pointerCount; ++index) {
+            pointerCoords[index] = new MotionEvent.PointerCoords();
+            if (h==historySize) {
+              unfixed.getPointerCoords(index, pointerCoords[index]);
+            } else {
+              unfixed.getHistoricalPointerCoords(index, h, pointerCoords[index]);
+            }
+          }
+          long subEventTime = h==historySize ? unfixed.getEventTime() : unfixed.getHistoricalEventTime(h);
+          correctPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords);
           int historicalMetaState = unfixed.getMetaState(); // huh? this can't be right, but I don't see any way to query metaState per-history
-          long eventTime = h==historySize ? unfixed.getEventTime() : unfixed.getHistoricalEventTime(h);
-          fixed.addBatch(eventTime,
-                         pointerCoords[h],
-                         historicalMetaState);
+          if (h == 0) {
+            fixed = MotionEvent.obtain(
+                unfixed.getDownTime(),
+                subEventTime,
+                unfixed.getAction(),
+                pointerCount,
+                pointerProperties,
+                pointerCoords,
+                historicalMetaState,
+                unfixed.getButtonState(),
+                unfixed.getXPrecision(),
+                unfixed.getYPrecision(),
+                unfixed.getDeviceId(),
+                unfixed.getEdgeFlags(),
+                unfixed.getSource(),
+                unfixed.getFlags());
+            // Make sure we got some of the tricky ones right...
+            CHECK_EQ(fixed.getAction(), unfixed.getAction());
+            CHECK_EQ(fixed.getActionMasked(), unfixed.getActionMasked());
+            CHECK_EQ(fixed.getActionIndex(), unfixed.getActionIndex());
+          } else {
+            fixed.addBatch(subEventTime,
+                           pointerCoords,
+                           historicalMetaState);
+          }
         }
         LogicalMotionEvent.breakDown(fixed, fixedLogicalMotionEventsSinceFirstDown);  // for post-mortem analysis
         answer = wrapped.onTouch(view, fixed);
         //answer = wrapped.onTouch(view, unfixed);
       } finally {
-        fixed.recycle();
+        if (fixed != null) {
+          fixed.recycle();
+        }
       }
     }
 
