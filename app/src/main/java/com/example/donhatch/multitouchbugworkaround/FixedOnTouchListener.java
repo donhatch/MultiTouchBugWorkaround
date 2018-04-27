@@ -3,6 +3,7 @@
 // OH WHOA, here is it happening triggered by POINTER_DOWN(1) instead of POINTER_DOWN(0)!
 // and *only* pointer 0 is bugging, not pointer 1!  All right, need to think about that.
 // Argh, and I guess it's not properly grouping the 1's, either.
+// I think I need to to write a parse/parseDump/undump.
 /*
 0.189   28/217:                  {0}     0: 2241.22192,512.643982,1.27499998,0.246582031
 0.194   29/217:           MOVE   {0}     0: 2250.21875,505.648834,1.27499998,0.246582031
@@ -523,12 +524,11 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       int max_id_occurring = 9; // XXX fudge
 
       // For each id,
-      // whenever there are 2 or more distinct runs with the same coords,
+      // whenever there are 2 or more distinct runs with the same coords
+      // within a given down-period of that id,
       // make a label for those coords.
-      String[][] id2index2label;
+      final String[][] id2index2label = new String[max_id_occurring+1][n];  // nulls initially
       {
-        id2index2label = new String[max_id_occurring+1][n];  // nulls initially
-
         for (int id = 0; id <= max_id_occurring; ++id) {
           String[] index2label = new String[n];  // nulls initially
 
@@ -541,9 +541,9 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             }
           }
 
-          // Each sequence of pointer-down,moves,pointer-up is its own label scope.
-          //
-
+          // Focusing on this id,
+          // each sequence of pointer-down,moves,pointer-up
+          // is its own label scope.
 
           for (int i0 = 0; i0 < n;) {
             // advance i0, if necessary, to something that has a fingerprint
@@ -553,7 +553,8 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             // advance i1 to something that does *not* have a fingerprint
             while (i1 < n && index2fingerprint[i1] != null) i1++;
 
-            // [i0,i1) is now a range beginning with pointer down and ending with up.
+            // [i0,i1) is now a range beginning with this pointer down
+            // and ending with this pointer up.
             // That's a scope; assign labels within it.
 
             HashMap<String,int[]> fingerprint2nRunsHolder = new HashMap<String,int[]>();
@@ -753,7 +754,57 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         }
         Log.i(TAG, sb.toString());
       }
-    }
+    }  // dump
+
+    // Read back in a string produced by dump().
+    public static ArrayList<LogicalMotionEvent> parseDump(String dump) {
+      final ArrayList<LogicalMotionEvent> answer = new ArrayList<LogicalMotionEvent>();
+      final String[] lines = dump.split("\n");
+      for (final String line : lines) {
+      //...
+        //answer.add(new LogicalMotionEvent(h<historySize, eventTimeMillis, action, actionId, ids, x, y, pressure, size, orientation, relative_x, relative_y, all_axis_values));
+      }
+      return null; // XXX
+    }  // parseDump
+/*
+// How did this happen?  Let's try reading it back in
+0.189   28/217:                  {0}     0: 2241.22192,512.643982,1.27499998,0.246582031
+0.194   29/217:           MOVE   {0}     0: 2250.21875,505.648834,1.27499998,0.246582031
+0.198   30/217:           MOVE   {0}     0: 2260.21533,498.653717,1.27499998,0.246582031
+0.206   31/217:  POINTER_DOWN(1) {0, 1}  0:[2260.21533,498.653717,1.27499998,0.246582031]    1: 976.660889,614.573181,1.87500000,0.322265625    <- should be A
+0.206   32/217:                  {0, 1}  0: 2279.20874,484.663422,1.28750002,0.246582031     1:[976.660889,614.573181,1.87500000,0.322265625]    <- should be A
+0.210   33/217:           MOVE   {0, 1}  0: 2288.70557,477.668274,1.28750002,0.246582031 A   1:[976.660889,614.573181,1.87500000,0.322265625]    <- should be A
+0.214   34/217:                  {0, 1}  0:[2288.70557,477.668274,1.28750002,0.246582031]A   1:(976.660889,614.573181,1.85000002,0.317382813)    <- should be A
+0.214   35/217:           MOVE   {0, 1}  0: 2297.20239,471.672455,1.28750002,0.247558594     1:[976.660889,614.573181,1.85000002,0.317382813]    <- should be A
+0.223   36/217:                  {0, 1}  0: 2288.70557,477.668274,1.28750002,0.247558594 A   1:(976.660889,614.573181,1.81250000,0.311523438)    <- should be A
+0.223   37/217:           MOVE   {0, 1}  0: 2315.19629,459.680756,1.30000007,0.247558594     1:[976.660889,614.573181,1.81250000,0.311523438]    <- should be A
+0.231   38/217:                  {0, 1}  0: 2288.70557,477.668274,1.30000007,0.247558594 A   1:(976.660889,614.573181,1.77499998,0.309570313)    <- should be A
+0.231   39/217:           MOVE   {0, 1}  0: 2332.19019,448.688416,1.30000007,0.248535156     1:[976.660889,614.573181,1.77499998,0.309570313]    <- should be A
+0.240   40/217:                  {0, 1}  0: 2288.70557,477.668274,1.30000007,0.248535156 A   1:(976.660889,614.573181,1.72500002,0.303710938)    <- should be A
+0.240   41/217:                  {0, 1}  0: 2349.18433,438.695343,1.31250000,0.248535156     1:[976.660889,614.573181,1.72500002,0.303710938]    <- should be A
+0.248   42/217:           MOVE   {0, 1}  0: 2288.70557,477.668274,1.31250000,0.248535156 A   1: 938.674072,624.566284,1.68750000,0.301757813
+0.248   43/217:           MOVE   {0, 1}  0: 2365.17871,429.701599,1.32500005,0.247558594     1: 976.660889,614.573181,1.68750000,0.301757813     <- should be A
+0.257   44/217:                  {0, 1}  0: 2288.70557,477.668274,1.32500005,0.247558594 A   1: 877.695251,645.551697,1.64999998,0.295898438
+0.257   45/217:           MOVE   {0, 1}  0: 2381.17334,421.707153,1.32500005,0.249511719     1: 976.660889,614.573181,1.64999998,0.295898438    <- should be A
+0.265   46/217:                  {0, 1}  0: 2288.70557,477.668274,1.32500005,0.249511719 A   1: 829.711914,665.537842,1.61250007,0.293457031
+0.265   47/217:           MOVE   {0, 1}  0: 2396.16797,413.712708,1.33749998,0.249511719     1: 976.660889,614.573181,1.61250007,0.293457031    <- should be A
+0.274   48/217:                  {0, 1}  0: 2288.70557,477.668274,1.33749998,0.249511719 A   1: 785.727173,689.521179,1.56250000,0.288574219
+0.274   49/217:                  {0, 1}  0: 2410.16309,406.717560,1.33749998,0.248046875     1: 976.660889,614.573181,1.56250000,0.288574219    <- should be A
+0.282   50/217:           MOVE   {0, 1}  0: 2288.70557,477.668274,1.33749998,0.248046875 A   1: 752.738647,713.504517,1.52499998,0.286132813
+0.282   51/217:           MOVE   {0, 1}  0: 2424.15845,400.721710,1.35000002,0.248046875     1: 976.660889,614.573181,1.52499998,0.286132813    <- should be A
+0.291   52/217:                  {0, 1}  0: 2288.70557,477.668274,1.35000002,0.248046875 A   1: 733.745239,737.487854,1.48750007,0.281250000
+0.291   53/217:           MOVE   {0, 1}  0: 2437.15381,394.725891,1.35000002,0.249023438     1: 976.660889,614.573181,1.48750007,0.281250000    <- should be A
+0.299   54/217:                  {0, 1}  0: 2288.70557,477.668274,1.35000002,0.249023438 A   1: 723.748718,761.471191,1.45000005,0.279296875
+0.299   55/217:           MOVE   {0, 1}  0: 2449.14966,389.729340,1.36250007,0.249023438     1: 976.660889,614.573181,1.45000005,0.279296875    <- should be A
+0.308   56/217:                  {0, 1}  0: 2288.70557,477.668274,1.36250007,0.249023438 A   1: 718.750427,786.453857,1.41250002,0.274902344
+0.308   57/217:           MOVE   {0, 1}  0: 2460.14575,384.732819,1.36250007,0.249023438     1: 976.660889,614.573181,1.41250002,0.274902344    <- should be A
+0.316   58/217:                  {0, 1}  0: 2288.70557,477.668274,1.36250007,0.249023438 A   1: 709.753601,809.437866,1.35000002,0.270019531
+0.316   59/217:           MOVE   {0, 1}  0: 2468.14307,379.736298,1.37500000,0.250000000     1: 976.660889,614.573181,1.35000002,0.270019531    <- should be A
+0.323   60/217:           MOVE   {0, 1}  0: 2476.14038,375.739075,1.37500000,0.251953125     1:[976.660889,614.573181,1.35000002,0.270019531]    <- should be A
+0.332   61/217:    POINTER_UP(1) {0, 1}  0:[2476.14038,375.739075,1.37500000,0.251953125]    1:[976.660889,614.573181,1.35000002,0.270019531]    <- should be A
+0.332   62/217:                  {0}     0: 2484.13745,371.741852,1.38750005,0.250976563
+0.339   63/217:           MOVE   {0}     0: 2489.33521,369.143951,1.38750005,0.250976563
+*/
   }  // class LogicalMotionEvent
 
   private ArrayList<LogicalMotionEvent> logicalMotionEventsSinceFirstDown = new ArrayList<LogicalMotionEvent>();
