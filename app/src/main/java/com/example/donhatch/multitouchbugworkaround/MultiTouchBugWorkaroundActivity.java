@@ -10,6 +10,8 @@ import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
 import android.view.WindowManager;
+import android.os.Handler;
+
 
 public class MultiTouchBugWorkaroundActivity extends AppCompatActivity {
   private static final String TAG = MultiTouchBugWorkaroundActivity.class.getSimpleName();
@@ -22,6 +24,16 @@ public class MultiTouchBugWorkaroundActivity extends AppCompatActivity {
     setContentView(new PaintView(this) {{
       setBackgroundColor(0xffc0c0c0);
     }});
+
+    if (true) {
+      new Handler().postDelayed(new Runnable() {
+        @Override
+        public void run() {
+          FixedOnTouchListener.unitTest();
+        }
+      }, 1500);  // after a delay, to wait for other noise to clear in logcat
+    }
+
     if (verboseLevel >= 1) Log.i(TAG, "out onCreate");
   }
 
