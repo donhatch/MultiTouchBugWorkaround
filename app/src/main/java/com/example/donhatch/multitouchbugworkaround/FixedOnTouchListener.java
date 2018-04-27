@@ -147,6 +147,20 @@ and another:
 0.419   82/120:           MOVE   {0, 1}  0:(609.788269,479.666901,0.737500012,0.208007813)A   1: 1209.58008,207.855652,1.25000000,0.263671875
 0.427   83/120:                  {0, 1}  0:(609.788269,479.666901,0.762499988,0.210449219)A   1: 1211.57935,204.857727,1.25000000,0.263671875 A?
 */
+// Here's where POINTER_DOWN 0 and 2 happened simultaneously... bug didn't happen (although that's not proof it can't)
+/*
+4.312  748/1016:                  {1}                                                            1: 2229.22607,863.400391,1.25000000,0.237792969
+4.320  749/1016:                  {1}                                                            1: 2237.22314,856.405273,1.25000000,0.238769531
+4.325  750/1016:           MOVE   {1}                                                            1: 2241.22168,852.907715,1.25000000,0.238769531
+4.329  751/1016:           MOVE   {1}                                                            1: 2245.22046,848.410828,1.25000000,0.238769531
+4.329  752/1016:  POINTER_DOWN(0) {0, 1}     0: 893.689697,1332.07495,0.725000024,0.185546875  !  1:[2245.22046,848.410828,1.25000000,0.238769531]
+4.338  753/1016:  POINTER_DOWN(2) {0, 1, 2}  0:[893.689697,1332.07495,0.725000024,0.185546875]    1:[2245.22046,848.410828,1.25000000,0.238769531]    2: 630.781006,746.481628,0.612500012,0.197265625
+4.338  754/1016:                  {0, 1, 2}  0:[893.689697,1332.07495,0.725000024,0.185546875]    1: 2254.21729,840.416382,1.25000000,0.238769531  !  2:[630.781006,746.481628,0.612500012,0.197265625] !
+4.338  755/1016:           MOVE   {0, 1, 2}  0:(893.689697,1332.07495,0.750000000,0.186035156)    1:[2254.21729,840.416382,1.25000000,0.238769531] ?  2:[630.781006,746.481628,0.612500012,0.197265625]
+4.346  756/1016:                  {0, 1, 2}  0:[893.689697,1332.07495,0.750000000,0.186035156]    1:[2254.21729,840.416382,1.25000000,0.238769531] ?  2:(630.781006,746.481628,0.637499988,0.197265625)
+4.346  757/1016:                  {0, 1, 2}  0:[893.689697,1332.07495,0.750000000,0.186035156]    1: 2264.21387,832.421936,1.25000000,0.239746094     2:[630.781006,746.481628,0.637499988,0.197265625]
+4.346  758/1016:           MOVE   {0, 1, 2}  0:(893.689697,1332.07495,0.762499988,0.188476563)    1:[2264.21387,832.421936,1.25000000,0.239746094]    2:[630.781006,746.481628,0.637499988,0.197265625]
+*/
 //
 // Correlation with timestamp:
 //      - on id 0, when it affects x,y, timestamp has typically *not* advanced, but once in a while it has advanced (not consistent)
@@ -547,10 +561,6 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         }
       }
 
-      // States:
-      //        - known to be safe
-      //        - known to be bugging
-      //        - known to be safe or safe soon (0 or idOfInterest went UP)
       int idOfInterest = -1; // never zero.  if positive, either might be bugging or definitely bugging.
       float xOfInterestForId0 = Float.NaN;  // if non-nan, might be bugging or definitely bugging.
       float yOfInterestForId0 = Float.NaN;  // if non-nan, might be bugging or definitely bugging.
@@ -703,6 +713,226 @@ public class FixedOnTouchListener implements View.OnTouchListener {
 
   private ArrayList<LogicalMotionEvent> logicalMotionEventsSinceFirstDown = new ArrayList<LogicalMotionEvent>();
 
+  // The sequence of events that arms the fixer is two consecutive events:
+  //     1. POINTER_DOWN(0) with exactly one other pointer id1 already down, followed by:
+  //            anchor0x,anchor0y = the x,y of that event
+  //     2. MOVE, with 0 and id1 down.
+  //            anchor1x,anchor1y = the primary (non-historical) x,y of that event
+  // While armed:
+  //        if id 0's x,y appears to be anchor0x,anchor0y, change it to its previous value
+  //        if id id1's x,y appears to be anchor1x,anchor1y, change it to its previous value
+  // The pattern that disarms the fixer is either:
+  //     - a new different arming
+  //     - if either id0 or id1 experiences the same x,y twice in a row
+  //        that is *not* the respective anchor position, then the bug isn't happening; disarm
+  // Note, we do *not* disarm the fixer on:
+  //     - a third pointer down (that doesn't affect the bug)
+  //     - id 0 or id1 UP (the bug can still effect the other one,
+  //       both on that UP event and subsequent ones.
+  //       generally only for about 1/10 of a second, but who knows)
+  //     - we could disarm id 0 when it goes UP, and disarm id id1 when it goes up, though.
+  // So the states are:
+  private final int STATE_DISARMED = 0;
+  private final int STATE_ARMING = 1;
+  private final int STATE_ARMED = 2;
+  private final String stateToString(int state) {
+    if (state == STATE_DISARMED) return "DISARMED";
+    if (state == STATE_ARMING) return "ARMING";
+    if (state == STATE_ARMED) return "ARMED";
+    CHECK(false);
+    return null;
+  }
+
+  private int mCurrentState = STATE_DISARMED;
+  private int mId1 = -1;  // never 0.  gets set to >0 when arming (first event seen)
+  private float mAnchor0x = Float.NaN;  // gets set when arming (first event seen)
+  private float mAnchor0y = Float.NaN;  // gets set when arming (first event seen)
+  private float mAnchor1x = Float.NaN;  // gets set when armed (second event seen)
+  private float mAnchor1y = Float.NaN;  // gets set when armed (second event seen)
+  private float mLastKnownGood0x = Float.NaN;  // set any time when armed and id 0 has an x,y that we didn't correct
+  private float mLastKnownGood0y = Float.NaN;  // set any time when armed and id 0 has an x,y that we didn't correct
+  private float mLastKnownGood1x = Float.NaN;  // set any time when armed and mId1 gets an x,y that we didn't correct
+  private float mLastKnownGood1y = Float.NaN;  // set any time when armed and mId1 gets an x,y that we didn't correct
+
+  private void moveToSTATE_DISARMED() {
+    mCurrentState = STATE_DISARMED;
+    mId1 = -1;
+    mAnchor0x = Float.NaN;
+    mAnchor0y = Float.NaN;
+    mAnchor1x = Float.NaN;
+    mAnchor1y = Float.NaN;
+    mLastKnownGood0x = Float.NaN;
+    mLastKnownGood0y = Float.NaN;
+    mLastKnownGood1x = Float.NaN;
+    mLastKnownGood1y = Float.NaN;
+  }
+  private void moveToSTATE_ARMING(int id1, float anchor0x, float anchor0y) {
+    mCurrentState = STATE_ARMING;
+    mId1 = id1;
+    mAnchor0x = anchor0x;
+    mAnchor0y = anchor0y;
+    mAnchor1x = Float.NaN;
+    mAnchor1y = Float.NaN;
+    mLastKnownGood0x = Float.NaN;
+    mLastKnownGood0y = Float.NaN;
+    mLastKnownGood1x = Float.NaN;
+    mLastKnownGood1y = Float.NaN;
+  }
+  private void moveToSTATE_ARMED(float anchor1x, float anchor1y, float lastKnownGood0x, float lastKnownGood0y, float lastKnownGood1x, float lastKnownGood1y) {
+    mCurrentState = STATE_ARMED;
+    CHECK_GE(mId1, 0);
+    CHECK(!Float.isNaN(mAnchor0x));
+    CHECK(!Float.isNaN(mAnchor0y));
+    mAnchor1x = anchor1x;
+    mAnchor1y = anchor1y;
+    mLastKnownGood0x = lastKnownGood0x;
+    mLastKnownGood0y = lastKnownGood0y;
+    mLastKnownGood1x = lastKnownGood1x;
+    mLastKnownGood1y = lastKnownGood1y;
+  }
+
+  private void correctPointerCoordsUsingState(MotionEvent unfixed, int historyIndex, long eventTime, MotionEvent.PointerCoords pointerCoords[]) {
+    final int verboseLevel = 0;
+    if (verboseLevel >= 1) Log.i(TAG, "        in correctPointerCoordsUsingState(historyIndex="+historyIndex+"/"+unfixed.getHistorySize()+", eventTime="+(eventTime-unfixed.getDownTime())/1000.+")  before: "+stateToString(mCurrentState));
+    if (verboseLevel >= 1) Log.i(TAG, "          before: id1="+mId1+" anchor0="+mAnchor0x+","+mAnchor0y+" anchor1="+mAnchor1x+","+mAnchor1y+" lkg0="+mLastKnownGood0x+","+mLastKnownGood0y+" lkg1="+mLastKnownGood1x+","+mLastKnownGood1y+"");
+    final int action = unfixed.getActionMasked();
+    final int pointerCount = unfixed.getPointerCount();
+    final int historySize = unfixed.getHistorySize();
+
+    // No matter what state we're in,
+    // if we see the first event of the arming sequence,
+    // honor it.
+    if (action == MotionEvent.ACTION_POINTER_DOWN
+     && pointerCount == 2
+     && unfixed.getActionIndex() == 0
+     && unfixed.getPointerId(0) == 0) {
+      moveToSTATE_ARMING(/*id1=*/unfixed.getPointerId(1),
+                         /*anchor0x=*/pointerCoords[0].x,
+                         /*anchor0y=*/pointerCoords[0].y);
+    } else if (mCurrentState == STATE_ARMING) {
+      if (action == MotionEvent.ACTION_MOVE) {
+        if (historyIndex == historySize  // i.e. this is the "primary" sub-event, not historical
+         && pointerCount == 2
+         && unfixed.getPointerId(0) == 0
+         && unfixed.getPointerId(1) == mId1) {
+          moveToSTATE_ARMED(/*anchor1x=*/pointerCoords[1].x,
+                            /*anchor1y=*/pointerCoords[1].y,
+                            /*lastKnownGood0x=*/pointerCoords[0].x,
+                            /*lastKnownGood0y=*/pointerCoords[0].y,
+                            /*lastKnownGood1x=*/pointerCoords[1].x,
+                            /*lastKnownGood1y=*/pointerCoords[1].y);
+        } else {
+          // We're in a historical sub-event of what may be the arming event.  Do nothing special.
+        }
+      } else {
+        // Didn't see the second event of the arming sequence; disarm.
+        moveToSTATE_DISARMED();
+      }
+    } else if (mCurrentState == STATE_ARMED) {  // i.e. if was already armed (not just now got armed)
+      if (unfixed.getPointerId(0) == 0) {
+        // id 0 is still down (although id mId1 might not be).
+        if (pointerCoords[0].x == mAnchor0x
+         && pointerCoords[0].y == mAnchor0y) {
+          // Pointer 0 moved to (or stayed still at) the anchor.
+          // That's what happens when it meant to stay at mLastKnownGood0.
+          // Correct it.
+          pointerCoords[0].x = mLastKnownGood0x;
+          pointerCoords[0].y = mLastKnownGood0y;
+        } else {
+          if (pointerCoords[0].x == mLastKnownGood0x
+           && pointerCoords[0].y == mLastKnownGood0y) {
+            // Pointer 0 stayed the same, and is *not* the anchor.
+            // The bug is not happening (since, when the bug is happening,
+            // staying the same always gets botched into moving to the anchor).
+            if (verboseLevel >= 1) Log.i(TAG, "          pointer 0 stayed the same at "+mLastKnownGood0x+","+mLastKnownGood0y+", and is *not* anchor. bug isn't happening (or isn't happening any more).");
+            moveToSTATE_DISARMED();
+          } else {
+            mLastKnownGood0x = pointerCoords[0].x;
+            mLastKnownGood0y = pointerCoords[0].y;
+          }
+        }
+      }
+      CHECK_GE(mId1, 0); // XXX wait, what? this failed once
+      int index1 = unfixed.findPointerIndex(mId1);
+      if (index1 != -1) {
+        // id mId1 is still down (although id 0 might not be).
+        if (pointerCoords[index1].x == mAnchor1x
+         && pointerCoords[index1].y == mAnchor1y) {
+          // Pointer mId1 moved to (or stayed still at) the anchor.
+          // That's what happens when it meant to stay at mLastKnownGood1.
+          // Correct it.
+          pointerCoords[index1].x = mLastKnownGood1x;
+          pointerCoords[index1].y = mLastKnownGood1y;
+        } else {
+          if (pointerCoords[index1].x == mLastKnownGood1x
+           && pointerCoords[index1].y == mLastKnownGood1y) {
+            // Pointer mId1 stayed the same, and is *not* the anchor.
+            // The bug is not happening (since, when the bug is happening,
+            // staying the same always gets botched into moving to the anchor).
+            if (verboseLevel >= 1) Log.i(TAG, "          pointer mId1="+mId1+" stayed the same at "+mLastKnownGood1x+","+mLastKnownGood1y+", and is *not* anchor. bug isn't happening (or isn't happening any more).");
+            moveToSTATE_DISARMED();
+          } else {
+            mLastKnownGood1x = pointerCoords[index1].x;
+            mLastKnownGood1y = pointerCoords[index1].y;
+          }
+        }
+      }
+    }  // STATE_ARMED
+    /*
+
+
+         out correctPointerCoordsUsingState(historyIndex=1/1, eventTime=0.599)  after: DISARMED
+
+         in correctPointerCoordsUsingState(historyIndex=0/0, eventTime=0.602)  before: DISARMED
+           before: id1=-1 anchor0=NaN,NaN anchor1=NaN,NaN lkg0=NaN,NaN lkg1=NaN,NaN
+           after: id1=1 anchor0=1294.5505,931.3532 anchor1=NaN,NaN lkg0=NaN,NaN lkg1=NaN,NaN
+         out correctPointerCoordsUsingState(historyIndex=0/0, eventTime=0.602)  after: ARMING
+         in correctPointerCoordsUsingState(historyIndex=0/0, eventTime=0.602)  before: ARMING
+           before: id1=1 anchor0=1294.5505,931.3532 anchor1=NaN,NaN lkg0=NaN,NaN lkg1=NaN,NaN
+           after: id1=1 anchor0=1294.5505,931.3532 anchor1=NaN,NaN lkg0=NaN,NaN lkg1=NaN,NaN
+         out correctPointerCoordsUsingState(historyIndex=0/0, eventTime=0.602)  after: ARMING
+         in correctPointerCoordsUsingState(historyIndex=0/1, eventTime=0.602)  before: ARMING
+           before: id1=1 anchor0=1294.5505,931.3532 anchor1=NaN,NaN lkg0=NaN,NaN lkg1=NaN,NaN
+           after: id1=1 anchor0=1294.5505,931.3532 anchor1=NaN,NaN lkg0=NaN,NaN lkg1=NaN,NaN
+         out correctPointerCoordsUsingState(historyIndex=0/1, eventTime=0.602)  after: ARMING
+
+         in correctPointerCoordsUsingState(historyIndex=1/1, eventTime=0.606)  before: ARMING
+           before: id1=1 anchor0=1294.5505,931.3532 anchor1=NaN,NaN lkg0=NaN,NaN lkg1=NaN,NaN
+           after: id1=1 anchor0=1294.5505,931.3532 anchor1=2014.8005,821.42957 lkg0=1294.5505,931.3532 lkg1=2014.8005,821.42957
+         out correctPointerCoordsUsingState(historyIndex=1/1, eventTime=0.606)  after: ARMED
+         in correctPointerCoordsUsingState(historyIndex=1/1, eventTime=0.606)  before: ARMED
+           before: id1=1 anchor0=1294.5505,931.3532 anchor1=2014.8005,821.42957 lkg0=1294.5505,931.3532 lkg1=2014.8005,821.42957
+           after: id1=1 anchor0=1294.5505,931.3532 anchor1=2014.8005,821.42957 lkg0=1294.5505,931.3532 lkg1=2014.8005,821.42957
+         out correctPointerCoordsUsingState(historyIndex=1/1, eventTime=0.606)  after: ARMED
+         in correctPointerCoordsUsingState(historyIndex=0/1, eventTime=0.611)  before: ARMED
+           before: id1=1 anchor0=1294.5505,931.3532 anchor1=2014.8005,821.42957 lkg0=1294.5505,931.3532 lkg1=2014.8005,821.42957
+           after: id1=1 anchor0=1294.5505,931.3532 anchor1=2014.8005,821.42957 lkg0=1294.5505,931.3532 lkg1=2014.8005,821.42957
+         out correctPointerCoordsUsingState(historyIndex=0/1, eventTime=0.611)  after: ARMED
+         in correctPointerCoordsUsingState(historyIndex=1/1, eventTime=0.611)  before: ARMED
+           before: id1=1 anchor0=1294.5505,931.3532 anchor1=2014.8005,821.42957 lkg0=1294.5505,931.3532 lkg1=2014.8005,821.42957
+           after: id1=1 anchor0=1294.5505,931.3532 anchor1=2014.8005,821.42957 lkg0=1294.5505,931.3532 lkg1=2018.2992,819.43097
+         out correctPointerCoordsUsingState(historyIndex=1/1, eventTime=0.611)  after: ARMED
+         in correctPointerCoordsUsingState(historyIndex=1/1, eventTime=0.611)  before: ARMED
+           before: id1=1 anchor0=1294.5505,931.3532 anchor1=2014.8005,821.42957 lkg0=1294.5505,931.3532 lkg1=2018.2992,819.43097
+           pointer mId1=1 stayed the same at 2018.2992,819.43097, and is *not* anchor. bug isn't happening.
+           after: id1=-1 anchor0=NaN,NaN anchor1=NaN,NaN lkg0=NaN,NaN lkg1=NaN,NaN
+         out correctPointerCoordsUsingState(historyIndex=1/1, eventTime=0.611)  after: DISARMED
+0.595  123/199:                  {1}                                                         1: 2010.30200,830.423279,1.21249998,0.232910156 A
+0.599  124/199:           MOVE   {1}                                                         1: 2012.30127,827.425354,1.21249998,0.232910156
+0.602  125/199:  POINTER_DOWN(0) {0, 1}  0: 1294.55054,931.353210,1.72500002,0.306152344 A!  1: 2010.30200,830.423279,1.21249998,0.232910156 A
+0.602  126/199:                  {0, 1}  0:[1294.55054,931.353210,1.72500002,0.306152344]A   1: 2013.30103,824.427490,1.21249998,0.232910156
+0.606  127/199:           MOVE   {0, 1}  0:[1294.55054,931.353210,1.72500002,0.306152344]A   1: 2014.80054,821.429565,1.21249998,0.232910156 B!
+0.611  128/199:                  {0, 1}  0:(1294.55054,931.353210,1.72500002,0.305175781)A   1:[2014.80054,821.429565,1.21249998,0.232910156]B?
+0.611  129/199:           MOVE   {0, 1}  0:[1294.55054,931.353210,1.72500002,0.305175781]A   1: 2018.29919,819.430969,1.21249998,0.232910156
+0.619  130/199:                  {0, 1}  0:(1294.55054,931.353210,1.72500002,0.304687500)A   1: 2014.80054,821.429565,1.21249998,0.232910156 B?
+0.619  131/199:           MOVE   {0, 1}  0:[1294.55054,931.353210,1.72500002,0.304687500]A   1: 2023.29749,812.435791,1.21249998,0.233886719
+0.628  132/199:                  {0, 1}  0:(1294.55054,931.353210,1.71249998,0.302734375)A   1: 2014.80054,821.429565,1.21249998,0.233886719 B?
+    */
+
+    if (verboseLevel >= 1) Log.i(TAG, "          after: id1="+mId1+" anchor0="+mAnchor0x+","+mAnchor0y+" anchor1="+mAnchor1x+","+mAnchor1y+" lkg0="+mLastKnownGood0x+","+mLastKnownGood0y+" lkg1="+mLastKnownGood1x+","+mLastKnownGood1y+"");
+    if (verboseLevel >= 1) Log.i(TAG, "        out correctPointerCoordsUsingState(historyIndex="+historyIndex+"/"+unfixed.getHistorySize()+", eventTime="+(eventTime-unfixed.getDownTime())/1000.+")  after: "+stateToString(mCurrentState));
+  }  // correctPointerCoordsUsingState
+
   // Framework calls this; we create a fixed MotionEvent
   // and call the wrapped listener on it.
   @Override
@@ -710,22 +940,34 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     final int verboseLevel = 1;  // 0: nothing, 1: dump entire sequence on final UP, 2: and in/out
     if (verboseLevel >= 2) Log.i(TAG, "    in FixedOnTouchListener onTouch");
 
-    LogicalMotionEvent.breakDown(unfixed, logicalMotionEventsSinceFirstDown);
+    LogicalMotionEvent.breakDown(unfixed, logicalMotionEventsSinceFirstDown);  // for post-mortem analysis
 
     boolean answer;
     {
-      // Use this one I think:
-      //   obtain(long downTime, long eventTime, int action, int pointerCount, PointerProperties[] pointerProperties, PointerCoords[] pointerCoords, int metaState, int buttonState, float xPrecision, float yPrecision, int deviceId, int edgeFlags, int source, int flags)
-      // and use addBatch to create the historical stuff.
-
       final int pointerCount = unfixed.getPointerCount();
-      final MotionEvent.PointerProperties pointerProperties[] = new MotionEvent.PointerProperties[pointerCount];  // CBB: reuse
-      final MotionEvent.PointerCoords pointerCoords[] = new MotionEvent.PointerCoords[pointerCount];  // CBB: reuse
+      final int historySize = unfixed.getHistorySize();
+
+      final MotionEvent.PointerProperties[] pointerProperties = new MotionEvent.PointerProperties[pointerCount];  // CBB: reuse
       for (int index = 0; index < pointerCount; ++index) {
         pointerProperties[index] = new MotionEvent.PointerProperties();
         unfixed.getPointerProperties(index, pointerProperties[index]);
-        pointerCoords[index] = new MotionEvent.PointerCoords();
-        unfixed.getPointerCoords(index, pointerCoords[index]);
+      }
+
+      // Need to correct the pointer coords in history order,
+      // before creating the fixed motion event,
+      // since the args to obtaining the motion event include the last (i.e. non-historical) sub-event of the history.
+      final MotionEvent.PointerCoords[][] pointerCoords = new MotionEvent.PointerCoords[historySize+1][pointerCount];  // CBB: reuse
+      for (int h = 0; h < historySize+1; ++h) {
+        for (int index = 0; index < pointerCount; ++index) {
+          pointerCoords[h][index] = new MotionEvent.PointerCoords();
+          if (h==historySize) {
+            unfixed.getPointerCoords(index, pointerCoords[h][index]);
+          } else {
+            unfixed.getHistoricalPointerCoords(index, h, pointerCoords[h][index]);
+          }
+        }
+        long subEventTime = h==historySize ? unfixed.getEventTime() : unfixed.getHistoricalEventTime(h);
+        correctPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords[h]);
       }
       MotionEvent fixed = MotionEvent.obtain(
           unfixed.getDownTime(),
@@ -733,7 +975,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           unfixed.getAction(),  // not getActionMasked(), apparently
           pointerCount,
           pointerProperties,
-          pointerCoords,
+          pointerCoords[historySize],
           unfixed.getMetaState(),
           unfixed.getButtonState(),
           unfixed.getXPrecision(),
@@ -742,18 +984,14 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           unfixed.getEdgeFlags(),
           unfixed.getSource(),
           unfixed.getFlags());
-      CHECK_EQ(fixed.getAction(), unfixed.getAction());
-      CHECK_EQ(fixed.getActionMasked(), unfixed.getActionMasked());
-      CHECK_EQ(fixed.getActionIndex(), unfixed.getActionIndex());
       try {
-        final int historySize = unfixed.getHistorySize();
+        CHECK_EQ(fixed.getAction(), unfixed.getAction());
+        CHECK_EQ(fixed.getActionMasked(), unfixed.getActionMasked());
+        CHECK_EQ(fixed.getActionIndex(), unfixed.getActionIndex());
         for (int h = 0; h < historySize; ++h) {
           int historicalMetaState = unfixed.getMetaState(); // huh? this can't be right, but I don't see any way to query metaState per-history
-          for (int index = 0; index < pointerCount; ++index) {
-            unfixed.getHistoricalPointerCoords(index, h, pointerCoords[index]);
-          }
           fixed.addBatch(unfixed.getHistoricalEventTime(h),
-                         pointerCoords,
+                         pointerCoords[h],
                          historicalMetaState);
         }
         answer = wrapped.onTouch(view, fixed);
