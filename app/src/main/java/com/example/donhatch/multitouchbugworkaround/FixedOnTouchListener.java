@@ -1,5 +1,6 @@
 // The infamous Oreo 8.1 multitouch bug
 //
+// TODO: remove this, I think this is fixed!  woohoo!
 // OH WHOA, here is it happening triggered by POINTER_DOWN(1) instead of POINTER_DOWN(0)!
 // and *only* pointer 0 is bugging, not pointer 1!  All right, need to think about that.
 // Also another example at bottom... maybe?
@@ -1056,6 +1057,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
   //       both on that UP event and subsequent ones.
   //       generally only for about 1/10 of a second, but who knows)
   //     - we could disarm id 0 when it goes UP, and disarm id id1 when it goes up, though.
+  // UPDATE: actually the going-down id need not be 0.  We call it id0.
   // So the states are:
   private final int STATE_DISARMED = 0;
   private final int STATE_ARMING = 1;
@@ -1069,7 +1071,8 @@ public class FixedOnTouchListener implements View.OnTouchListener {
   }
 
   private int mCurrentState = STATE_DISARMED;
-  private int mId1 = -1;  // never 0.  gets set to >0 when arming (first event seen)
+  private int mId0 = -1;  // gets set to the going-down pointer when arming (first event seen)
+  private int mId1 = -1;  // gets set to the already-down pointer when arming (first event seen)
   private float mAnchor0x = Float.NaN;  // gets set when arming (first event seen)
   private float mAnchor0y = Float.NaN;  // gets set when arming (first event seen)
   private float mAnchor1x = Float.NaN;  // gets set when armed (second event seen)
@@ -1081,6 +1084,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
 
   private void moveToSTATE_DISARMED() {
     mCurrentState = STATE_DISARMED;
+    mId0 = -1;
     mId1 = -1;
     mAnchor0x = Float.NaN;
     mAnchor0y = Float.NaN;
@@ -1091,8 +1095,9 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     mLastKnownGood1x = Float.NaN;
     mLastKnownGood1y = Float.NaN;
   }
-  private void moveToSTATE_ARMING(int id1, float anchor0x, float anchor0y) {
+  private void moveToSTATE_ARMING(int id0, int id1, float anchor0x, float anchor0y) {
     mCurrentState = STATE_ARMING;
+    mId0 = id0;
     mId1 = id1;
     mAnchor0x = anchor0x;
     mAnchor0y = anchor0y;
@@ -1105,6 +1110,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
   }
   private void moveToSTATE_ARMED(float anchor1x, float anchor1y, float lastKnownGood0x, float lastKnownGood0y, float lastKnownGood1x, float lastKnownGood1y) {
     mCurrentState = STATE_ARMED;
+    CHECK_GE(mId0, 0);
     CHECK_GE(mId1, 0);
     CHECK(!Float.isNaN(mAnchor0x));
     CHECK(!Float.isNaN(mAnchor0y));
@@ -1119,8 +1125,9 @@ public class FixedOnTouchListener implements View.OnTouchListener {
   private void correctPointerCoordsUsingState(MotionEvent unfixed, int historyIndex, long eventTime, MotionEvent.PointerCoords pointerCoords[]) {
     final int verboseLevel = 0;
     if (verboseLevel >= 1) Log.i(TAG, "        in correctPointerCoordsUsingState(historyIndex="+historyIndex+"/"+unfixed.getHistorySize()+", eventTime="+(eventTime-unfixed.getDownTime())/1000.+")  before: "+stateToString(mCurrentState));
-    if (verboseLevel >= 1) Log.i(TAG, "          before: id1="+mId1+" anchor0="+mAnchor0x+","+mAnchor0y+" anchor1="+mAnchor1x+","+mAnchor1y+" lkg0="+mLastKnownGood0x+","+mLastKnownGood0y+" lkg1="+mLastKnownGood1x+","+mLastKnownGood1y+"");
+    if (verboseLevel >= 1) Log.i(TAG, "          before: id0="+mId0+" id1="+mId1+" anchor0="+mAnchor0x+","+mAnchor0y+" anchor1="+mAnchor1x+","+mAnchor1y+" lkg0="+mLastKnownGood0x+","+mLastKnownGood0y+" lkg1="+mLastKnownGood1x+","+mLastKnownGood1y+"");
     final int action = unfixed.getActionMasked();
+    final int actionIndex = unfixed.getActionIndex();
     final int pointerCount = unfixed.getPointerCount();
     final int historySize = unfixed.getHistorySize();
 
@@ -1128,24 +1135,26 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     // if we see the first event of the arming sequence,
     // honor it.
     if (action == MotionEvent.ACTION_POINTER_DOWN
-     && pointerCount == 2
-     && unfixed.getActionIndex() == 0
-     && unfixed.getPointerId(0) == 0) {
-      moveToSTATE_ARMING(/*id1=*/unfixed.getPointerId(1),
-                         /*anchor0x=*/pointerCoords[0].x,
-                         /*anchor0y=*/pointerCoords[0].y);
+     && pointerCount == 2) {
+      final int id0 = unfixed.getPointerId(actionIndex);  // the one going down
+      final int id1 = unfixed.getPointerId(1 - actionIndex);  // the one that was already down
+      moveToSTATE_ARMING(id0, id1,
+                         /*anchor0x=*/pointerCoords[actionIndex].x,
+                         /*anchor0y=*/pointerCoords[actionIndex].y);
     } else if (mCurrentState == STATE_ARMING) {
       if (action == MotionEvent.ACTION_MOVE) {
         if (historyIndex == historySize  // i.e. this is the "primary" sub-event, not historical
          && pointerCount == 2
-         && unfixed.getPointerId(0) == 0
-         && unfixed.getPointerId(1) == mId1) {
-          moveToSTATE_ARMED(/*anchor1x=*/pointerCoords[1].x,
-                            /*anchor1y=*/pointerCoords[1].y,
-                            /*lastKnownGood0x=*/pointerCoords[0].x,
-                            /*lastKnownGood0y=*/pointerCoords[0].y,
-                            /*lastKnownGood1x=*/pointerCoords[1].x,
-                            /*lastKnownGood1y=*/pointerCoords[1].y);
+         && unfixed.findPointerIndex(mId0) >= 0
+         && unfixed.findPointerIndex(mId1) >= 0) {
+          final int index0 = unfixed.findPointerIndex(mId0);
+          final int index1 = unfixed.findPointerIndex(mId1);
+          moveToSTATE_ARMED(/*anchor1x=*/pointerCoords[index1].x,
+                            /*anchor1y=*/pointerCoords[index1].y,
+                            /*lastKnownGood0x=*/pointerCoords[index0].x,
+                            /*lastKnownGood0y=*/pointerCoords[index0].y,
+                            /*lastKnownGood1x=*/pointerCoords[index1].x,
+                            /*lastKnownGood1y=*/pointerCoords[index1].y);
         } else {
           // We're in a historical sub-event of what may be the arming event.  Do nothing special.
         }
@@ -1154,31 +1163,31 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         moveToSTATE_DISARMED();
       }
     } else if (mCurrentState == STATE_ARMED) {  // i.e. if was already armed (not just now got armed)
-      if (unfixed.getPointerId(0) == 0) {
-        // id 0 is still down (although id mId1 might not be).
-        if (pointerCoords[0].x == mAnchor0x
-         && pointerCoords[0].y == mAnchor0y) {
+      final int index0 = unfixed.findPointerIndex(mId0);
+      if (index0 != -1) {
+        // id0 is still down (although id1 might not be).
+        if (pointerCoords[index0].x == mAnchor0x
+         && pointerCoords[index0].y == mAnchor0y) {
           // Pointer 0 moved to (or stayed still at) the anchor.
           // That's what happens when it meant to stay at mLastKnownGood0.
           // Correct it.
-          pointerCoords[0].x = mLastKnownGood0x;
-          pointerCoords[0].y = mLastKnownGood0y;
+          pointerCoords[index0].x = mLastKnownGood0x;
+          pointerCoords[index0].y = mLastKnownGood0y;
         } else {
-          if (pointerCoords[0].x == mLastKnownGood0x
-           && pointerCoords[0].y == mLastKnownGood0y) {
-            // Pointer 0 stayed the same, and is *not* the anchor.
+          if (pointerCoords[index0].x == mLastKnownGood0x
+           && pointerCoords[index0].y == mLastKnownGood0y) {
+            // Pointer id0 stayed the same, and is *not* the anchor.
             // The bug is not happening (since, when the bug is happening,
             // staying the same always gets botched into moving to the anchor).
             if (verboseLevel >= 1) Log.i(TAG, "          pointer 0 stayed the same at "+mLastKnownGood0x+","+mLastKnownGood0y+", and is *not* anchor. bug isn't happening (or isn't happening any more).");
             moveToSTATE_DISARMED();
           } else {
-            mLastKnownGood0x = pointerCoords[0].x;
-            mLastKnownGood0y = pointerCoords[0].y;
+            mLastKnownGood0x = pointerCoords[index0].x;
+            mLastKnownGood0y = pointerCoords[index0].y;
           }
         }
       }
       if (mCurrentState == STATE_ARMED) {  // still, i.e. if we didn't just disarm
-        CHECK_GE(mId1, 1);
         int index1 = unfixed.findPointerIndex(mId1);
         if (index1 != -1) {
           // id mId1 is still down (although id 0 might not be).
@@ -1206,7 +1215,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       }
     }  // STATE_ARMED
 
-    if (verboseLevel >= 1) Log.i(TAG, "          after: id1="+mId1+" anchor0="+mAnchor0x+","+mAnchor0y+" anchor1="+mAnchor1x+","+mAnchor1y+" lkg0="+mLastKnownGood0x+","+mLastKnownGood0y+" lkg1="+mLastKnownGood1x+","+mLastKnownGood1y+"");
+    if (verboseLevel >= 1) Log.i(TAG, "          after: id0="+mId0+" id1="+mId1+" anchor0="+mAnchor0x+","+mAnchor0y+" anchor1="+mAnchor1x+","+mAnchor1y+" lkg0="+mLastKnownGood0x+","+mLastKnownGood0y+" lkg1="+mLastKnownGood1x+","+mLastKnownGood1y+"");
     if (verboseLevel >= 1) Log.i(TAG, "        out correctPointerCoordsUsingState(historyIndex="+historyIndex+"/"+unfixed.getHistorySize()+", eventTime="+(eventTime-unfixed.getDownTime())/1000.+")  after: "+stateToString(mCurrentState));
   }  // correctPointerCoordsUsingState
 
