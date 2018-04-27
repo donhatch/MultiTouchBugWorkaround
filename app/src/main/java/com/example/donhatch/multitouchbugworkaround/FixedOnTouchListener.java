@@ -6,7 +6,7 @@
 // TODO: reconcile annotations with current algorithm (they are showing the old algorithm from before I made it more flexible)
 // TODO: be able to actually play back the stuff parsed from a dump file:
 //   - be able to convert from LogicalMotionEvent(s) to MotionEvent
-// TODO: dump to a file instead of logcat, so it's not subject to size and rate constraints
+// TODO: dump to a file instead of logcat, so it's not subject to size and rate constraints and random droppage
 
 // BUG: See BAD00-- still not fixed
 // BUG: See BAD01-- still not fixed
@@ -412,9 +412,10 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       return sb.toString();
     }
 
-    public static void dump(ArrayList<LogicalMotionEvent> list) {
+    public static String dumpString(ArrayList<LogicalMotionEvent> list) {
       final int verboseLevel = 0;  // 0: nothing, 1: in/out, 2: some gory details
-      if (verboseLevel >= 1) Log.i(TAG, "in LogicalMotionEvent.dump("+list.size()+" logical events)");
+      if (verboseLevel >= 1) Log.i(TAG, "in LogicalMotionEvent.dumpString("+list.size()+" logical events)");
+      StringBuilder answer = new StringBuilder();
 
       int n = list.size();
 
@@ -665,12 +666,21 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             sb.append(coordsString);
           }
         }
-        Log.i(TAG, sb.toString());
+        answer.append(sb);
+        answer.append("\n");
       }
-      if (verboseLevel >= 1) Log.i(TAG, "out LogicalMotionEvent.dump("+list.size()+" logical events)");
+      if (verboseLevel >= 1) Log.i(TAG, "out LogicalMotionEvent.dumpString("+list.size()+" logical events)");
+      return answer.toString();
     }  // dump
 
-    // Read back in a string produced by dump().
+    // Argh!  Calling Log.i on the multiline dump string causes it to be truncated *very* early (like, dozens instead of hundreds).
+    public static void LogMultiline(String tag, String s) {
+      for (String line : s.split("\n")) {
+        Log.i(tag, line);
+      }
+    }
+
+    // Read back in a string produced by dumpString().
     public static ArrayList<LogicalMotionEvent> parseDump(String dumpString) throws java.text.ParseException {
       final int verboseLevel = 0;  // 0: nothing, 1: in/out, 2: gory details
       if (verboseLevel >= 1) Log.i(TAG, "            in parseDump");
@@ -907,7 +917,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           Log.i(TAG, "          parseDump succeeded!");
           Log.i(TAG, "          Here's it back out:");
           Log.i(TAG, "          ============================");
-          dump(parsed);
+          LogMultiline(TAG, dumpString(parsed));
           Log.i(TAG, "          ============================");
         }
       }
@@ -1181,11 +1191,11 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       if (verboseLevel >= 1) {
         Log.i(TAG, "      ===============================================================");
         Log.i(TAG, "      LOGICAL MOTION EVENT SEQUENCE:");
-        LogicalMotionEvent.dump(logicalMotionEventsSinceFirstDown);
+        LogicalMotionEvent.LogMultiline(TAG, LogicalMotionEvent.dumpString(logicalMotionEventsSinceFirstDown));
         Log.i(TAG, "      ===============================================================");
         Log.i(TAG, "      ===============================================================");
         Log.i(TAG, "      FIXED LOGICAL MOTION EVENT SEQUENCE:");
-        LogicalMotionEvent.dump(fixedLogicalMotionEventsSinceFirstDown);
+        LogicalMotionEvent.LogMultiline(TAG, LogicalMotionEvent.dumpString(fixedLogicalMotionEventsSinceFirstDown));
         Log.i(TAG, "      ===============================================================");
       }
       logicalMotionEventsSinceFirstDown.clear();

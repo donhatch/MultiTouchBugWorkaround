@@ -187,7 +187,6 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
       stuff.mCompletedPaints.add(mFingerPaints[actionId]);
     }
 
-    final int calledStrategy = 2;
     if (action == MotionEvent.ACTION_MOVE) {
       // honor historical motion
       final int historySize = event.getHistorySize();
