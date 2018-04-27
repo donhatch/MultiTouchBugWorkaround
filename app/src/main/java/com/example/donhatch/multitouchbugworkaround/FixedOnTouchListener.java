@@ -404,6 +404,11 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       this.actionId = actionId;
       this.ids = ids;
       this.all_axis_values = all_axis_values;
+      for (int id : ids) {
+        CHECK_LE(0, id);
+        CHECK_LE(id, all_axis_values.length);
+        CHECK(all_axis_values[id] != null);
+      }
     }
     // Breaks motionEvent down into LogicalMotionEvents and appends them to list.
     public static void breakDown(MotionEvent motionEvent, ArrayList<LogicalMotionEvent> list) {
@@ -753,7 +758,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           // "0:[2288.70557,477.668274,1.28750002,0.246582031]A"
           "\\s*(?<id>\\d+):\\s*(?<stuff>[^ A-Z]+)(?<labelMaybe>\\s*[A-Z]+)?(?<punctuationMaybe>[!?])?(\\s*)"
       );
-      // I wish: captured "+" and "*" would give arrays back
+      // I wish: captured "+" and "*" would give arrays back.  That would simplify a lot.
       for (int iLine = 0; iLine < lines.length; ++iLine) {
         final String line = lines[iLine];
         if (verboseLevel >= 2) Log.i(TAG, "                  line "+iLine+"/"+lines.length+": "+STRINGIFY(line));
@@ -773,9 +778,12 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         if (verboseLevel >= 2) Log.i(TAG, "                      lastPerIdData = "+STRINGIFY(matcher.group("lastPerIdData")));
         if (verboseLevel >= 2) Log.i(TAG, "                      comment = "+STRINGIFY(matcher.group("comment")));
 
+
+        ArrayList<Integer> idsArrayList = new ArrayList<Integer>();
+        ArrayList<float[]> valuesArrayList = new ArrayList<float[]>();
+
         final String perIdData = matcher.group("perIdData");
-        // perIdData = "0: 2332.19019,448.688416,1.30000007,0.248535156     1:[976.660889,614.573181,1.77499998,0.309570313]"
-        // Messy split.  Maybe find would work, but I don't quite know how to use it at the moment.
+        // perIdData = "0: 2332.19019,448.688416,1.30000007,0.248535156 A!    1:[976.660889,614.573181,1.77499998,0.309570313]"
         final Matcher perIdDataMatcher = perIdDataPattern.matcher(perIdData);
         int pos = 0;
         while (perIdDataMatcher.find()) {
@@ -786,24 +794,51 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           String stuff = perIdDataMatcher.group("stuff");
           String labelMaybe = perIdDataMatcher.group("labelMaybe");
           String punctuationMaybe = perIdDataMatcher.group("punctuationMaybe");
+          if ((stuff.startsWith("(") && stuff.endsWith(")"))
+           || (stuff.startsWith("[") && stuff.endsWith("]"))) {
+            stuff = stuff.substring(1, stuff.length()-2);
+          }
+          String[] stuffTokens = stuff.split(",");
           if (verboseLevel >= 2) Log.i(TAG, "                          perIdDatum = "+STRINGIFY(perIdDatum));
           if (verboseLevel >= 2) Log.i(TAG, "                              id = "+STRINGIFY(id));
           if (verboseLevel >= 2) Log.i(TAG, "                              stuff = "+STRINGIFY(stuff));
+          if (verboseLevel >= 2) Log.i(TAG, "                                  stuffTokens="+STRINGIFY(stuffTokens));
           if (verboseLevel >= 2) Log.i(TAG, "                              labelMaybe = "+STRINGIFY(labelMaybe));
           if (verboseLevel >= 2) Log.i(TAG, "                              punctuationMaybe = "+STRINGIFY(punctuationMaybe));
+          float[] values = new float[stuffTokens.length];
+          for (int i = 0; i < stuffTokens.length; ++i) {
+            values[i] = Float.parseFloat(stuffTokens[i]);
+          }
+          idsArrayList.add(Integer.parseInt(id));
+          valuesArrayList.add(values);
+
           pos = perIdDataMatcher.end();
         }
         CHECK(perIdDataMatcher.hitEnd());
 
-      //...
+        final long eventTimeMillis = (long)Math.round(Double.parseDouble(matcher.group("timestamp")) * 1000.);
         final int action = 0;  // XXX
         final int actionId = 0; // XXX
-        final int nIds = 0; // XXX
-        final int[] ids = new int[nIds];
-        int max_id_occurring = 9; // XXX
+        final int[] ids = new int[idsArrayList.size()];
+        int max_id_occurring = -1;
+        for (int index = 0; index < ids.length; ++index) {
+          ids[index] = idsArrayList.get(index);
+          max_id_occurring = Math.max(max_id_occurring, ids[index]);
+        }
+        CHECK_LT(max_id_occurring, 100);  // make sure it's not ridiculous
         final MotionEvent.PointerCoords[] all_axis_values = new MotionEvent.PointerCoords[max_id_occurring+1];
-        // public LogicalMotionEvent(boolean isHistorical, long eventTimeMillis, int action, int actionId, int ids[], MotionEvent.PointerCoords[] all_axis_values) 
-        //answer.add(new LogicalMotionEvent(h<historySize, eventTimeMillis, action, actionId, ids, x, y, pressure, size, all_axis_values));
+        for (int index = 0; index < ids.length; ++index) {
+          final int id = ids[index];
+          all_axis_values[id] = new MotionEvent.PointerCoords();
+          final float[] values = valuesArrayList.get(index);
+          CHECK_EQ(values.length, 4);
+          all_axis_values[id].setAxisValue(MotionEvent.AXIS_X, values[0]);
+          all_axis_values[id].setAxisValue(MotionEvent.AXIS_Y, values[1]);
+          all_axis_values[id].setAxisValue(MotionEvent.AXIS_PRESSURE, values[2]);
+          all_axis_values[id].setAxisValue(MotionEvent.AXIS_SIZE, values[3]);
+        }
+        boolean isHistorical = false; // XXX
+        answer.add(new LogicalMotionEvent(isHistorical, eventTimeMillis, action, actionId, ids, all_axis_values));
       }
       if (verboseLevel >= 1) Log.i(TAG, "            out parseDump, returning "+answer.size()+" logical events");
       return answer;
@@ -853,10 +888,19 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         "0.339   63/217:           MOVE   {0}     0: 2489.33521,369.143951,1.38750005,0.250976563 FAKELABEL? 1:[976.660889,614.573181,1.35000002,0.270019531] FAKE   // fake fake ",
         "");
 
+
+      ArrayList<LogicalMotionEvent> parsed = null;
       try {
-        ArrayList<LogicalMotionEvent> parsed = parseDump(dumpString);
+        parsed = parseDump(dumpString);
       } catch (java.text.ParseException e) {
         throw new AssertionError(e);
+      }
+      if (parsed != null) {
+        Log.i(TAG, "          parseDump succeeded!");
+        Log.i(TAG, "          Here's it back out:");
+        Log.i(TAG, "          ============================");
+        dump(parsed);
+        Log.i(TAG, "          ============================");
       }
 
       if (verboseLevel >= 1) Log.i(TAG, "        out LogicalMotionEvent.testParseDump");
