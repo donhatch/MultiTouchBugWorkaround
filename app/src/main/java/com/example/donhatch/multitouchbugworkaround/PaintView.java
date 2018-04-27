@@ -32,6 +32,8 @@ import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.CompoundButton;
 import android.widget.LinearLayout;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -45,22 +47,29 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
   private static final String TAG = MultiTouchBugWorkaroundActivity.class.getSimpleName();
 
   public static final int MAX_FINGERS = 10;
-  private Path[] mFingerPaths = new Path[MAX_FINGERS];
-  private Paint[] mFingerPaints;
-
-  private ArrayList<Path> mCompletedPaths;
-  private ArrayList<Paint> mCompletedPaints;
+  private Paint[] mFingerPaints = new Paint[MAX_FINGERS];;
   private RectF mPathBounds = new RectF();
-  private float[] startX = new float[MAX_FINGERS];
-  private float[] startY = new float[MAX_FINGERS];
-  private float[] prevX = new float[MAX_FINGERS];
-  private float[] prevY = new float[MAX_FINGERS];
+  private boolean mShowUnfixed = true;
+
+  private static class Stuff {
+    private Path[] mFingerPaths = new Path[MAX_FINGERS];
+    private ArrayList<Path> mCompletedPaths = new ArrayList<Path>();
+    private ArrayList<Paint> mCompletedPaints = new ArrayList<Paint>();
+    private float[] startX = new float[MAX_FINGERS];
+    private float[] startY = new float[MAX_FINGERS];
+    private float[] prevX = new float[MAX_FINGERS];
+    private float[] prevY = new float[MAX_FINGERS];
+  }
+  private Stuff unfixedStuff = new Stuff();
+  private Stuff fixedStuff = new Stuff();
 
   public PaintView(Context context) {
     super(context);
     Log.i(TAG, "    in PaintView ctor");
 
     if (true) {
+      setOnTouchListener(new FixedOnTouchListener(new MyTouchListener2()));
+    } else if (true) {
       setOnTouchListener(new FixedOnTouchListener(new MyTouchListener()));
     } else {
       setOnTouchListener(new MyTouchListener());
@@ -71,8 +80,20 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
       setOnClickListener(new Button.OnClickListener() {
         @Override
         public void onClick(View button) {
-          mCompletedPaths.clear();
-          mCompletedPaints.clear();
+          unfixedStuff.mCompletedPaths.clear();
+          fixedStuff.mCompletedPaths.clear();
+          unfixedStuff.mCompletedPaints.clear();
+          fixedStuff.mCompletedPaints.clear();
+          PaintView.this.invalidate();
+        }
+      });
+    }});
+    addView(new CheckBox(context) {{
+      setText("Fix");
+      setOnCheckedChangeListener(new CheckBox.OnCheckedChangeListener() {
+        @Override
+        public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+          mShowUnfixed = !isChecked;
           PaintView.this.invalidate();
         }
       });
@@ -92,8 +113,6 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
   protected void onAttachedToWindow() {
     Log.i(TAG, "        in PaintView onAttachedToWindow");
     super.onAttachedToWindow();
-    mCompletedPaths = new ArrayList<Path>();
-    mCompletedPaints = new ArrayList<Paint>();
 
     final int colors[] = new int[] {
       Color.RED,
@@ -108,7 +127,6 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
       Color.GRAY,
     };
     CHECK_EQ(colors.length, MAX_FINGERS);
-    mFingerPaints = new Paint[MAX_FINGERS];
     for (int i = 0; i < MAX_FINGERS; ++i) {
       mFingerPaints[i] = new Paint();
       mFingerPaints[i].setAntiAlias(true);
@@ -127,17 +145,30 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
     if (verboseLevel >= 1) Log.i(TAG, "            in PaintView onDraw");
     super.onDraw(canvas);
 
-    CHECK_EQ(mCompletedPaths.size(), mCompletedPaints.size());
-    for (int i = 0; i < mCompletedPaths.size(); ++i) {
-      canvas.drawPath(mCompletedPaths.get(i), mCompletedPaints.get(i));
-    }
-
-    CHECK_EQ(mFingerPaths.length, mFingerPaints.length);
-    for (int i = 0; i < mFingerPaths.length; ++i) {
-      if (mFingerPaths[i] != null) {
-          canvas.drawPath(mFingerPaths[i], mFingerPaints[i]);
+    if (mShowUnfixed) {
+      CHECK_EQ(unfixedStuff.mCompletedPaths.size(), unfixedStuff.mCompletedPaints.size());
+      for (int i = 0; i < unfixedStuff.mCompletedPaths.size(); ++i) {
+        canvas.drawPath(unfixedStuff.mCompletedPaths.get(i), unfixedStuff.mCompletedPaints.get(i));
+      }
+      CHECK_EQ(fixedStuff.mFingerPaths.length, mFingerPaints.length);
+      for (int i = 0; i < fixedStuff.mFingerPaths.length; ++i) {
+        if (fixedStuff.mFingerPaths[i] != null) {
+            canvas.drawPath(fixedStuff.mFingerPaths[i], mFingerPaints[i]);
+        }
+      }
+    } else {
+      CHECK_EQ(fixedStuff.mCompletedPaths.size(), fixedStuff.mCompletedPaints.size());
+      for (int i = 0; i < fixedStuff.mCompletedPaths.size(); ++i) {
+        canvas.drawPath(fixedStuff.mCompletedPaths.get(i), fixedStuff.mCompletedPaints.get(i));
+      }
+      CHECK_EQ(unfixedStuff.mFingerPaths.length, mFingerPaints.length);
+      for (int i = 0; i < unfixedStuff.mFingerPaths.length; ++i) {
+        if (unfixedStuff.mFingerPaths[i] != null) {
+            canvas.drawPath(unfixedStuff.mFingerPaths[i], mFingerPaints[i]);
+        }
       }
     }
+
     if (verboseLevel >= 1) Log.i(TAG, "            out PaintView onDraw");
   }
 
@@ -149,12 +180,23 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
       return onTouchListener2.onTouch(view, null, touchEvent);
     }
   }
+
+
   class MyTouchListener2 implements FixedOnTouchListener.OnTouchListener2 {
     @Override
-    public boolean onTouch(View view, MotionEvent unfixed, MotionEvent fixed) {
-      final MotionEvent event = fixed; // XXX
-
+    public boolean onTouch(View view_unused, MotionEvent unfixedEvent, MotionEvent fixedEvent) {
       final int verboseLevel = 0;  // 0:nothing, 1: in, 2: and out and more detail
+
+      if (unfixedEvent != null) applyEventToStuff(unfixedEvent, unfixedStuff);
+      if (fixedEvent != null) applyEventToStuff(fixedEvent, fixedStuff);
+
+      return true;
+    }
+
+    private void applyEventToStuff(MotionEvent event, Stuff stuff) {
+
+      final int verboseLevel = 0;
+
       int pointerCount = event.getPointerCount();
       int cappedPointerCount = pointerCount > MAX_FINGERS ? MAX_FINGERS : pointerCount;
       int actionIndex = event.getActionIndex();
@@ -167,16 +209,14 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
         CHECK_EQ(event.findPointerIndex(pointerIds[i]), i);
       }
 
-      if (verboseLevel >= 1) Log.i(TAG, "                in PaintView onTouchEvent (hs="+event.getHistorySize()+") pc="+pointerCount+" ai="+actionIndex+" a="+FixedOnTouchListener.actionToString(action)+" actionId="+actionId+" "+STRINGIFY(pointerIds));
-
       if ((action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) && actionId < MAX_FINGERS) {
-        mFingerPaths[actionId] = new Path();
+        stuff.mFingerPaths[actionId] = new Path();
         if (verboseLevel >= 1) Log.i(TAG, "                  starting path "+actionId+": moveTo "+event.getX(actionIndex)+", "+event.getY(actionIndex));
-        mFingerPaths[actionId].moveTo(event.getX(actionIndex), event.getY(actionIndex));
-        startX[actionId] = event.getX(actionIndex);
-        startY[actionId] = event.getY(actionIndex);
-        prevX[actionId] = startX[actionId];
-        prevY[actionId] = startY[actionId];
+        stuff.mFingerPaths[actionId].moveTo(event.getX(actionIndex), event.getY(actionIndex));
+        stuff.startX[actionId] = event.getX(actionIndex);
+        stuff.startY[actionId] = event.getY(actionIndex);
+        stuff.prevX[actionId] = stuff.startX[actionId];
+        stuff.prevY[actionId] = stuff.startY[actionId];
       }
 
       final int calledStrategy = 2;
@@ -186,14 +226,14 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
         for (int h = 0; h < historySize+1; ++h) {
           for (int index = 0; index < pointerCount; ++index) {
             int id = event.getPointerId(index);
-            if (id < MAX_FINGERS && mFingerPaths[id] != null) {
+            if (id < MAX_FINGERS && stuff.mFingerPaths[id] != null) {
               final float x = h==historySize ? event.getX(index) : event.getHistoricalX(index, h);
               final float y = h==historySize ? event.getY(index) : event.getHistoricalY(index, h);
               if (verboseLevel >= 1) Log.i(TAG, "                  adding to path "+id+": lineTo "+x+", "+y+"  (h="+h+"/"+historySize+")");
-              mFingerPaths[id].lineTo(x, y);
+              stuff.mFingerPaths[id].lineTo(x, y);
               if (pointerCount == 2) {
-                boolean omitPerCalledStrategy1 = (x == startX[id] && y == startY[id]);
-                boolean omitPerCalledStrategy2 = (x == prevX[id] && y == prevY[id]);
+                boolean omitPerCalledStrategy1 = (x == stuff.startX[id] && y == stuff.startY[id]);
+                boolean omitPerCalledStrategy2 = (x == stuff.prevX[id] && y == stuff.prevY[id]);
                 if (verboseLevel >= 1) Log.i(TAG, "                      omitPerCalledStrategy1 = "+omitPerCalledStrategy1);
                 if (verboseLevel >= 1) Log.i(TAG, "                      omitPerCalledStrategy2 = "+omitPerCalledStrategy2);
 
@@ -204,9 +244,9 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
                 }
               }
 
-              prevX[id] = x;
-              prevY[id] = y;
-              mFingerPaths[id].computeBounds(mPathBounds, true);
+              stuff.prevX[id] = x;
+              stuff.prevY[id] = y;
+              stuff.mFingerPaths[id].computeBounds(mPathBounds, true);
               invalidate((int) mPathBounds.left, (int) mPathBounds.top,
                   (int) mPathBounds.right, (int) mPathBounds.bottom);
             }
@@ -216,17 +256,14 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
 
       if ((action == MotionEvent.ACTION_POINTER_UP || action == MotionEvent.ACTION_UP) && actionId < MAX_FINGERS) {
         if (verboseLevel >= 1) Log.i(TAG, "                  ending path "+actionId+": setLastPoint "+event.getX(actionIndex)+", "+event.getY(actionIndex));
-        mFingerPaths[actionId].setLastPoint(event.getX(actionIndex), event.getY(actionIndex));
-        mCompletedPaths.add(mFingerPaths[actionId]);
-        mCompletedPaints.add(mFingerPaints[actionId]);
-        mFingerPaths[actionId].computeBounds(mPathBounds, true);
+        stuff.mFingerPaths[actionId].setLastPoint(event.getX(actionIndex), event.getY(actionIndex));
+        stuff.mCompletedPaths.add(stuff.mFingerPaths[actionId]);
+        stuff.mCompletedPaints.add(mFingerPaints[actionId]);
+        stuff.mFingerPaths[actionId].computeBounds(mPathBounds, true);
         invalidate((int) mPathBounds.left, (int) mPathBounds.top,
             (int) mPathBounds.right, (int) mPathBounds.bottom);
-        mFingerPaths[actionId] = null;
+        stuff.mFingerPaths[actionId] = null;
       }
-
-      if (verboseLevel >= 2) Log.i(TAG, "                out PaintView onTouchEvent");
-      return true;
-    }
+    }  // applyEventToStuff
   }
 }

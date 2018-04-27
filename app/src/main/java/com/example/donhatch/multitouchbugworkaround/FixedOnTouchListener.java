@@ -7,8 +7,6 @@
 // TODO: be able to actually play back the stuff parsed from a dump file:
 //   - be able to convert from LogicalMotionEvent(s) to MotionEvent
 // TODO: dump to a file instead of logcat, so it's not subject to size and rate constraints
-// TODO: ui buttons to switch between correctd and not (how?)
-// TODO: maybe allow hooking up *two* real listeners to the FixedListener?  and/or a listener that takes both?  the latter would be easiest to use.
 
 // BUG: See BAD00-- still not fixed
 //
