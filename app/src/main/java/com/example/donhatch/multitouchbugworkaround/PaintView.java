@@ -60,10 +60,7 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
     super(context);
     Log.i(TAG, "    in PaintView ctor");
 
-    if (false) {
-      // experiment
-      setOnTouchListener(new FixedOnTouchListener.OnTouchListenerTestWrapper(new MyTouchListener()));
-    } else if (true) {
+    if (true) {
       setOnTouchListener(new FixedOnTouchListener(new MyTouchListener()));
     } else {
       setOnTouchListener(new MyTouchListener());
