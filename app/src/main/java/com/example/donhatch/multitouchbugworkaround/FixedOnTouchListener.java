@@ -2,6 +2,7 @@
 //
 // OH WHOA, here is it happening triggered by POINTER_DOWN(1) instead of POINTER_DOWN(0)!
 // and *only* pointer 0 is bugging, not pointer 1!  All right, need to think about that.
+// Also another example at bottom... maybe?
 /*
 0.189   28/217:                  {0}     0: 2241.22192,512.643982,1.27499998,0.246582031
 0.194   29/217:           MOVE   {0}     0: 2250.21875,505.648834,1.27499998,0.246582031
@@ -489,6 +490,17 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       return answer;
     }
 
+    // STRINGIFY uses ", ", we want "," instead
+    public static String STRINGIFY_COMPACT(int[] array) {
+      StringBuilder sb = new StringBuilder("{");
+      for (int i = 0; i < array.length; ++i) {
+        if (i != 0) sb.append(",");
+        sb.append(array[i]);
+      }
+      sb.append("}");
+      return sb.toString();
+    }
+
     public static void dump(ArrayList<LogicalMotionEvent> list) {
       final int verboseLevel = 0;  // 0: nothing, 1: in/out, 2: some gory details
       if (verboseLevel >= 1) Log.i(TAG, "in LogicalMotionEvent.dump("+list.size()+" logical events)");
@@ -499,7 +511,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       int max_id_occurring = -1;
       for (int i = 0; i < n; ++i) {
         final int ids[] = list.get(i).ids;
-        idsWidth = Math.max(idsWidth, STRINGIFY(ids).length());
+        idsWidth = Math.max(idsWidth, STRINGIFY_COMPACT(ids).length());
         for (final int id: ids) {
           max_id_occurring = Math.max(max_id_occurring, id);
         }
@@ -650,7 +662,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                                 i, n,
                                 (e.action==MotionEvent.ACTION_MOVE && e.isHistorical ? "" :
                                 (actionToString(e.action)+(e.action==MotionEvent.ACTION_MOVE?"  ":"("+e.actionId+")"))),
-                                STRINGIFY(e.ids)));
+                                STRINGIFY_COMPACT(e.ids)));
         for (int id = 0; id < e.all_axis_values.length; ++id) {
           if (e.all_axis_values[id] == null) {
             //sb.append(String.format("%29s", ""));
@@ -849,7 +861,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         }
         CHECK_GE(ids.length, 1);
 
-        if (verboseLevel >= 2) Log.i(TAG, "                              ids = "+STRINGIFY(ids));
+        if (verboseLevel >= 2) Log.i(TAG, "                              ids = "+STRINGIFY_COMPACT(ids));
         if (true) {
           // Check that ids matches which columns were populated
           final String idsString = matcher.group("ids");
@@ -860,9 +872,9 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           for (int i = 0; i < idTokens.length; ++i) {
             shouldBeIds[i] = Integer.parseInt(idTokens[i]);
           }
-          if (verboseLevel >= 2) Log.i(TAG, "                              shouldBeIds = "+STRINGIFY(shouldBeIds));
-          if (!STRINGIFY(ids).equals(STRINGIFY(shouldBeIds))) {
-            throw new AssertionError("claimed ids "+STRINGIFY(shouldBeIds)+", actually occurring ids "+STRINGIFY(ids));
+          if (verboseLevel >= 2) Log.i(TAG, "                              shouldBeIds = "+STRINGIFY_COMPACT(shouldBeIds));
+          if (!STRINGIFY_COMPACT(ids).equals(STRINGIFY_COMPACT(shouldBeIds))) {
+            throw new AssertionError("claimed ids "+STRINGIFY_COMPACT(shouldBeIds)+", actually occurring ids "+STRINGIFY_COMPACT(ids));
 
           }
         }
