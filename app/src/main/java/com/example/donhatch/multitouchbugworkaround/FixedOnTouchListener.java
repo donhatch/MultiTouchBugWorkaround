@@ -950,6 +950,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
   }
 
   private ArrayList<LogicalMotionEvent> logicalMotionEventsSinceFirstDown = new ArrayList<LogicalMotionEvent>();
+  private ArrayList<LogicalMotionEvent> fixedLogicalMotionEventsSinceFirstDown = new ArrayList<LogicalMotionEvent>();
 
   // The sequence of events that arms the fixer is two consecutive events:
   //     1. POINTER_DOWN(0) with exactly one other pointer id1 already down, followed by:
@@ -1173,10 +1174,11 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     if (verboseLevel >= 1) Log.i(TAG, "        out correctPointerCoordsUsingState(historyIndex="+historyIndex+"/"+unfixed.getHistorySize()+", eventTime="+(eventTime-unfixed.getDownTime())/1000.+")  after: "+stateToString(mCurrentState));
   }  // correctPointerCoordsUsingState
 
+
   // Framework calls this; we create a fixed MotionEvent
   // and call the wrapped listener on it.
   @Override
-  final public boolean onTouch(View view, MotionEvent unfixed) {
+  public boolean onTouch(View view, MotionEvent unfixed) {
     final int verboseLevel = 1;  // 0: nothing, 1: dump entire sequence on final UP, 2: and in/out
     if (verboseLevel >= 2) Log.i(TAG, "    in FixedOnTouchListener onTouch");
 
@@ -1196,6 +1198,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       // Need to correct the pointer coords in history order,
       // before creating the fixed motion event,
       // since the args to obtaining the motion event include the last (i.e. non-historical) sub-event of the history.
+      // TODO: actually that turned out to be not true!  The truth is, obtain() takes the first historical, and should addBatch the remaining historical and the primary.
       final MotionEvent.PointerCoords[][] pointerCoords = new MotionEvent.PointerCoords[historySize+1][pointerCount];  // CBB: reuse
       for (int h = 0; h < historySize+1; ++h) {
         for (int index = 0; index < pointerCount; ++index) {
@@ -1211,11 +1214,11 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       }
       MotionEvent fixed = MotionEvent.obtain(
           unfixed.getDownTime(),
-          unfixed.getEventTime(),
+          0==historySize ? unfixed.getEventTime() : unfixed.getHistoricalEventTime(0),
           unfixed.getAction(),  // not getActionMasked(), apparently
           pointerCount,
           pointerProperties,
-          pointerCoords[historySize],
+          pointerCoords[0],   // first historical goes first!
           unfixed.getMetaState(),
           unfixed.getButtonState(),
           unfixed.getXPrecision(),
@@ -1228,13 +1231,16 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         CHECK_EQ(fixed.getAction(), unfixed.getAction());
         CHECK_EQ(fixed.getActionMasked(), unfixed.getActionMasked());
         CHECK_EQ(fixed.getActionIndex(), unfixed.getActionIndex());
-        for (int h = 0; h < historySize; ++h) {
+        for (int h = 1; h < historySize+1; ++h) {
           int historicalMetaState = unfixed.getMetaState(); // huh? this can't be right, but I don't see any way to query metaState per-history
-          fixed.addBatch(unfixed.getHistoricalEventTime(h),
+          long eventTime = h==historySize ? unfixed.getEventTime() : unfixed.getHistoricalEventTime(h);
+          fixed.addBatch(eventTime,
                          pointerCoords[h],
                          historicalMetaState);
         }
+        LogicalMotionEvent.breakDown(fixed, fixedLogicalMotionEventsSinceFirstDown);  // for post-mortem analysis
         answer = wrapped.onTouch(view, fixed);
+        //answer = wrapped.onTouch(view, unfixed);
       } finally {
         fixed.recycle();
       }
@@ -1246,8 +1252,13 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         Log.i(TAG, "      LOGICAL MOTION EVENT SEQUENCE:");
         LogicalMotionEvent.dump(logicalMotionEventsSinceFirstDown);
         Log.i(TAG, "      ===============================================================");
+        Log.i(TAG, "      ===============================================================");
+        Log.i(TAG, "      FIXED LOGICAL MOTION EVENT SEQUENCE:");
+        LogicalMotionEvent.dump(fixedLogicalMotionEventsSinceFirstDown);
+        Log.i(TAG, "      ===============================================================");
       }
       logicalMotionEventsSinceFirstDown.clear();
+      fixedLogicalMotionEventsSinceFirstDown.clear();
     }
 
     if (verboseLevel >= 2) Log.i(TAG, "    out FixedOnTouchListener onTouch, returning "+answer);
@@ -1650,3 +1661,4 @@ and another...
 1.022  248/747:           MOVE   {2,3}                                                                                                                2:[2074.27979,1108.23035,0.987500012,0.233398438]    3:(1105.61609,1140.20813,0.800000012,0.214355469)
 1.030  249/747:                  {2,3}                                                                                                                2: 2107.26831,1127.21716,0.987500012,0.233886719     3:[1105.61609,1140.20813,0.800000012,0.214355469]
 */
+
