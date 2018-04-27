@@ -53,7 +53,7 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
 
   private static class Stuff {
     private Path[] mFingerPaths = new Path[MAX_FINGERS];
-    private ArrayList<Path> mCompletedPaths = new ArrayList<Path>();
+    private ArrayList<Path> mPaths = new ArrayList<Path>();
     private ArrayList<Paint> mCompletedPaints = new ArrayList<Paint>();
     private float[] startX = new float[MAX_FINGERS];
     private float[] startY = new float[MAX_FINGERS];
@@ -92,8 +92,8 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
       setOnClickListener(new Button.OnClickListener() {
         @Override
         public void onClick(View button) {
-          unfixedStuff.mCompletedPaths.clear();
-          fixedStuff.mCompletedPaths.clear();
+          unfixedStuff.mPaths.clear();
+          fixedStuff.mPaths.clear();
           unfixedStuff.mCompletedPaints.clear();
           fixedStuff.mCompletedPaints.clear();
           PaintView.this.invalidate();
@@ -150,15 +150,9 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
   }
 
   private void drawStuff(Canvas canvas, Stuff stuff) {
-    CHECK_EQ(stuff.mCompletedPaths.size(), stuff.mCompletedPaints.size());
-    for (int i = 0; i < stuff.mCompletedPaths.size(); ++i) {
-      canvas.drawPath(stuff.mCompletedPaths.get(i), stuff.mCompletedPaints.get(i));
-    }
-    CHECK_EQ(fixedStuff.mFingerPaths.length, mFingerPaints.length);
-    for (int i = 0; i < stuff.mFingerPaths.length; ++i) {
-      if (stuff.mFingerPaths[i] != null) {
-          canvas.drawPath(stuff.mFingerPaths[i], mFingerPaints[i]);
-      }
+    CHECK_EQ(stuff.mPaths.size(), stuff.mCompletedPaints.size());
+    for (int i = 0; i < stuff.mPaths.size(); ++i) {
+      canvas.drawPath(stuff.mPaths.get(i), stuff.mCompletedPaints.get(i));
     }
   }
   private void applyEventToStuff(MotionEvent event, Stuff stuff) {
@@ -178,6 +172,7 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
     }
 
     if ((action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) && actionId < MAX_FINGERS) {
+      CHECK(stuff.mFingerPaths[actionId] == null);
       stuff.mFingerPaths[actionId] = new Path();
       if (verboseLevel >= 1) Log.i(TAG, "                  starting path "+actionId+": moveTo "+event.getX(actionIndex)+", "+event.getY(actionIndex));
       stuff.mFingerPaths[actionId].moveTo(event.getX(actionIndex), event.getY(actionIndex));
@@ -185,6 +180,11 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
       stuff.startY[actionId] = event.getY(actionIndex);
       stuff.prevX[actionId] = stuff.startX[actionId];
       stuff.prevY[actionId] = stuff.startY[actionId];
+
+      // It seems to be fine to draw it while in progress
+      // (I'm not sure what the value of the final setLastPoint() is).
+      stuff.mPaths.add(stuff.mFingerPaths[actionId]);
+      stuff.mCompletedPaints.add(mFingerPaints[actionId]);
     }
 
     final int calledStrategy = 2;
@@ -211,7 +211,6 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
                 if (verboseLevel >= 1) Log.i(TAG, "                      HEY!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
               }
             }
-
             stuff.prevX[id] = x;
             stuff.prevY[id] = y;
             stuff.mFingerPaths[id].computeBounds(mPathBounds, true);
@@ -225,8 +224,6 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
     if ((action == MotionEvent.ACTION_POINTER_UP || action == MotionEvent.ACTION_UP) && actionId < MAX_FINGERS) {
       if (verboseLevel >= 1) Log.i(TAG, "                  ending path "+actionId+": setLastPoint "+event.getX(actionIndex)+", "+event.getY(actionIndex));
       stuff.mFingerPaths[actionId].setLastPoint(event.getX(actionIndex), event.getY(actionIndex));
-      stuff.mCompletedPaths.add(stuff.mFingerPaths[actionId]);
-      stuff.mCompletedPaints.add(mFingerPaints[actionId]);
       stuff.mFingerPaths[actionId].computeBounds(mPathBounds, true);
       invalidate((int) mPathBounds.left, (int) mPathBounds.top,
           (int) mPathBounds.right, (int) mPathBounds.bottom);
