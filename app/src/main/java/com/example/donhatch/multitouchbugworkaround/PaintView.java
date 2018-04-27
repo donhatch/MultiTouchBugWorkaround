@@ -151,9 +151,9 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
         canvas.drawPath(unfixedStuff.mCompletedPaths.get(i), unfixedStuff.mCompletedPaints.get(i));
       }
       CHECK_EQ(fixedStuff.mFingerPaths.length, mFingerPaints.length);
-      for (int i = 0; i < fixedStuff.mFingerPaths.length; ++i) {
-        if (fixedStuff.mFingerPaths[i] != null) {
-            canvas.drawPath(fixedStuff.mFingerPaths[i], mFingerPaints[i]);
+      for (int i = 0; i < unfixedStuff.mFingerPaths.length; ++i) {
+        if (unfixedStuff.mFingerPaths[i] != null) {
+            canvas.drawPath(unfixedStuff.mFingerPaths[i], mFingerPaints[i]);
         }
       }
     } else {
@@ -161,10 +161,10 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
       for (int i = 0; i < fixedStuff.mCompletedPaths.size(); ++i) {
         canvas.drawPath(fixedStuff.mCompletedPaths.get(i), fixedStuff.mCompletedPaints.get(i));
       }
-      CHECK_EQ(unfixedStuff.mFingerPaths.length, mFingerPaints.length);
-      for (int i = 0; i < unfixedStuff.mFingerPaths.length; ++i) {
-        if (unfixedStuff.mFingerPaths[i] != null) {
-            canvas.drawPath(unfixedStuff.mFingerPaths[i], mFingerPaints[i]);
+      CHECK_EQ(fixedStuff.mFingerPaths.length, mFingerPaints.length);
+      for (int i = 0; i < fixedStuff.mFingerPaths.length; ++i) {
+        if (fixedStuff.mFingerPaths[i] != null) {
+            canvas.drawPath(fixedStuff.mFingerPaths[i], mFingerPaints[i]);
         }
       }
     }

@@ -3,7 +3,7 @@
 // https://android-review.googlesource.com/c/platform/frameworks/native/+/640606/
 //
 //
-// TODO: reconcile annotations
+// TODO: reconcile annotations with current algorithm (they are showing the old algorithm from before I made it more flexible)
 // TODO: be able to actually play back the stuff parsed from a dump file:
 //   - be able to convert from LogicalMotionEvent(s) to MotionEvent
 // TODO: dump to a file instead of logcat, so it's not subject to size and rate constraints
