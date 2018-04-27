@@ -144,33 +144,98 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
     final int verboseLevel = 0;
     if (verboseLevel >= 1) Log.i(TAG, "            in PaintView onDraw");
     super.onDraw(canvas);
-
     if (mShowUnfixed) {
-      CHECK_EQ(unfixedStuff.mCompletedPaths.size(), unfixedStuff.mCompletedPaints.size());
-      for (int i = 0; i < unfixedStuff.mCompletedPaths.size(); ++i) {
-        canvas.drawPath(unfixedStuff.mCompletedPaths.get(i), unfixedStuff.mCompletedPaints.get(i));
-      }
-      CHECK_EQ(fixedStuff.mFingerPaths.length, mFingerPaints.length);
-      for (int i = 0; i < unfixedStuff.mFingerPaths.length; ++i) {
-        if (unfixedStuff.mFingerPaths[i] != null) {
-            canvas.drawPath(unfixedStuff.mFingerPaths[i], mFingerPaints[i]);
-        }
-      }
+      drawStuff(canvas, unfixedStuff);
     } else {
-      CHECK_EQ(fixedStuff.mCompletedPaths.size(), fixedStuff.mCompletedPaints.size());
-      for (int i = 0; i < fixedStuff.mCompletedPaths.size(); ++i) {
-        canvas.drawPath(fixedStuff.mCompletedPaths.get(i), fixedStuff.mCompletedPaints.get(i));
+      drawStuff(canvas, fixedStuff);
+    }
+    if (verboseLevel >= 1) Log.i(TAG, "            out PaintView onDraw");
+  }
+
+  private void drawStuff(Canvas canvas, Stuff stuff) {
+    CHECK_EQ(stuff.mCompletedPaths.size(), stuff.mCompletedPaints.size());
+    for (int i = 0; i < stuff.mCompletedPaths.size(); ++i) {
+      canvas.drawPath(stuff.mCompletedPaths.get(i), stuff.mCompletedPaints.get(i));
+    }
+    CHECK_EQ(fixedStuff.mFingerPaths.length, mFingerPaints.length);
+    for (int i = 0; i < stuff.mFingerPaths.length; ++i) {
+      if (stuff.mFingerPaths[i] != null) {
+          canvas.drawPath(stuff.mFingerPaths[i], mFingerPaints[i]);
       }
-      CHECK_EQ(fixedStuff.mFingerPaths.length, mFingerPaints.length);
-      for (int i = 0; i < fixedStuff.mFingerPaths.length; ++i) {
-        if (fixedStuff.mFingerPaths[i] != null) {
-            canvas.drawPath(fixedStuff.mFingerPaths[i], mFingerPaints[i]);
+    }
+  }
+  private void applyEventToStuff(MotionEvent event, Stuff stuff) {
+
+    final int verboseLevel = 0;
+
+    int pointerCount = event.getPointerCount();
+    int cappedPointerCount = pointerCount > MAX_FINGERS ? MAX_FINGERS : pointerCount;
+    int actionIndex = event.getActionIndex();
+    int action = event.getActionMasked();
+    int actionId = event.getPointerId(actionIndex);
+
+    int[] pointerIds = new int[pointerCount];
+    for (int i = 0; i < pointerCount; ++i) {
+      pointerIds[i] = event.getPointerId(i);
+      CHECK_EQ(event.findPointerIndex(pointerIds[i]), i);
+    }
+
+    if ((action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) && actionId < MAX_FINGERS) {
+      stuff.mFingerPaths[actionId] = new Path();
+      if (verboseLevel >= 1) Log.i(TAG, "                  starting path "+actionId+": moveTo "+event.getX(actionIndex)+", "+event.getY(actionIndex));
+      stuff.mFingerPaths[actionId].moveTo(event.getX(actionIndex), event.getY(actionIndex));
+      stuff.startX[actionId] = event.getX(actionIndex);
+      stuff.startY[actionId] = event.getY(actionIndex);
+      stuff.prevX[actionId] = stuff.startX[actionId];
+      stuff.prevY[actionId] = stuff.startY[actionId];
+    }
+
+    final int calledStrategy = 2;
+    if (action == MotionEvent.ACTION_MOVE) {
+      // honor historical motion
+      final int historySize = event.getHistorySize();
+      for (int h = 0; h < historySize+1; ++h) {
+        for (int index = 0; index < pointerCount; ++index) {
+          int id = event.getPointerId(index);
+          if (id < MAX_FINGERS && stuff.mFingerPaths[id] != null) {
+            final float x = h==historySize ? event.getX(index) : event.getHistoricalX(index, h);
+            final float y = h==historySize ? event.getY(index) : event.getHistoricalY(index, h);
+            if (verboseLevel >= 1) Log.i(TAG, "                  adding to path "+id+": lineTo "+x+", "+y+"  (h="+h+"/"+historySize+")");
+            stuff.mFingerPaths[id].lineTo(x, y);
+            if (pointerCount == 2) {
+              boolean omitPerCalledStrategy1 = (x == stuff.startX[id] && y == stuff.startY[id]);
+              boolean omitPerCalledStrategy2 = (x == stuff.prevX[id] && y == stuff.prevY[id]);
+              if (verboseLevel >= 1) Log.i(TAG, "                      omitPerCalledStrategy1 = "+omitPerCalledStrategy1);
+              if (verboseLevel >= 1) Log.i(TAG, "                      omitPerCalledStrategy2 = "+omitPerCalledStrategy2);
+
+              //CHECK(!omitPerCalledStrategy1 || omitPerCalledStrategy2);
+              if (omitPerCalledStrategy1 && !omitPerCalledStrategy2) {
+                // happens sometimes... only just after starting a path or something?
+                if (verboseLevel >= 1) Log.i(TAG, "                      HEY!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+              }
+            }
+
+            stuff.prevX[id] = x;
+            stuff.prevY[id] = y;
+            stuff.mFingerPaths[id].computeBounds(mPathBounds, true);
+            invalidate((int) mPathBounds.left, (int) mPathBounds.top,
+                (int) mPathBounds.right, (int) mPathBounds.bottom);
+          }
         }
       }
     }
 
-    if (verboseLevel >= 1) Log.i(TAG, "            out PaintView onDraw");
-  }
+    if ((action == MotionEvent.ACTION_POINTER_UP || action == MotionEvent.ACTION_UP) && actionId < MAX_FINGERS) {
+      if (verboseLevel >= 1) Log.i(TAG, "                  ending path "+actionId+": setLastPoint "+event.getX(actionIndex)+", "+event.getY(actionIndex));
+      stuff.mFingerPaths[actionId].setLastPoint(event.getX(actionIndex), event.getY(actionIndex));
+      stuff.mCompletedPaths.add(stuff.mFingerPaths[actionId]);
+      stuff.mCompletedPaints.add(mFingerPaints[actionId]);
+      stuff.mFingerPaths[actionId].computeBounds(mPathBounds, true);
+      invalidate((int) mPathBounds.left, (int) mPathBounds.top,
+          (int) mPathBounds.right, (int) mPathBounds.bottom);
+      stuff.mFingerPaths[actionId] = null;
+    }
+  }  // applyEventToStuff
 
 
   class MyTouchListener implements View.OnTouchListener {
@@ -193,77 +258,5 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
       return true;
     }
 
-    private void applyEventToStuff(MotionEvent event, Stuff stuff) {
-
-      final int verboseLevel = 0;
-
-      int pointerCount = event.getPointerCount();
-      int cappedPointerCount = pointerCount > MAX_FINGERS ? MAX_FINGERS : pointerCount;
-      int actionIndex = event.getActionIndex();
-      int action = event.getActionMasked();
-      int actionId = event.getPointerId(actionIndex);
-
-      int[] pointerIds = new int[pointerCount];
-      for (int i = 0; i < pointerCount; ++i) {
-        pointerIds[i] = event.getPointerId(i);
-        CHECK_EQ(event.findPointerIndex(pointerIds[i]), i);
-      }
-
-      if ((action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) && actionId < MAX_FINGERS) {
-        stuff.mFingerPaths[actionId] = new Path();
-        if (verboseLevel >= 1) Log.i(TAG, "                  starting path "+actionId+": moveTo "+event.getX(actionIndex)+", "+event.getY(actionIndex));
-        stuff.mFingerPaths[actionId].moveTo(event.getX(actionIndex), event.getY(actionIndex));
-        stuff.startX[actionId] = event.getX(actionIndex);
-        stuff.startY[actionId] = event.getY(actionIndex);
-        stuff.prevX[actionId] = stuff.startX[actionId];
-        stuff.prevY[actionId] = stuff.startY[actionId];
-      }
-
-      final int calledStrategy = 2;
-      if (action == MotionEvent.ACTION_MOVE) {
-        // honor historical motion
-        final int historySize = event.getHistorySize();
-        for (int h = 0; h < historySize+1; ++h) {
-          for (int index = 0; index < pointerCount; ++index) {
-            int id = event.getPointerId(index);
-            if (id < MAX_FINGERS && stuff.mFingerPaths[id] != null) {
-              final float x = h==historySize ? event.getX(index) : event.getHistoricalX(index, h);
-              final float y = h==historySize ? event.getY(index) : event.getHistoricalY(index, h);
-              if (verboseLevel >= 1) Log.i(TAG, "                  adding to path "+id+": lineTo "+x+", "+y+"  (h="+h+"/"+historySize+")");
-              stuff.mFingerPaths[id].lineTo(x, y);
-              if (pointerCount == 2) {
-                boolean omitPerCalledStrategy1 = (x == stuff.startX[id] && y == stuff.startY[id]);
-                boolean omitPerCalledStrategy2 = (x == stuff.prevX[id] && y == stuff.prevY[id]);
-                if (verboseLevel >= 1) Log.i(TAG, "                      omitPerCalledStrategy1 = "+omitPerCalledStrategy1);
-                if (verboseLevel >= 1) Log.i(TAG, "                      omitPerCalledStrategy2 = "+omitPerCalledStrategy2);
-
-                //CHECK(!omitPerCalledStrategy1 || omitPerCalledStrategy2);
-                if (omitPerCalledStrategy1 && !omitPerCalledStrategy2) {
-                  // happens sometimes... only just after starting a path or something?
-                  if (verboseLevel >= 1) Log.i(TAG, "                      HEY!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-                }
-              }
-
-              stuff.prevX[id] = x;
-              stuff.prevY[id] = y;
-              stuff.mFingerPaths[id].computeBounds(mPathBounds, true);
-              invalidate((int) mPathBounds.left, (int) mPathBounds.top,
-                  (int) mPathBounds.right, (int) mPathBounds.bottom);
-            }
-          }
-        }
-      }
-
-      if ((action == MotionEvent.ACTION_POINTER_UP || action == MotionEvent.ACTION_UP) && actionId < MAX_FINGERS) {
-        if (verboseLevel >= 1) Log.i(TAG, "                  ending path "+actionId+": setLastPoint "+event.getX(actionIndex)+", "+event.getY(actionIndex));
-        stuff.mFingerPaths[actionId].setLastPoint(event.getX(actionIndex), event.getY(actionIndex));
-        stuff.mCompletedPaths.add(stuff.mFingerPaths[actionId]);
-        stuff.mCompletedPaints.add(mFingerPaints[actionId]);
-        stuff.mFingerPaths[actionId].computeBounds(mPathBounds, true);
-        invalidate((int) mPathBounds.left, (int) mPathBounds.top,
-            (int) mPathBounds.right, (int) mPathBounds.bottom);
-        stuff.mFingerPaths[actionId] = null;
-      }
-    }  // applyEventToStuff
   }
 }
