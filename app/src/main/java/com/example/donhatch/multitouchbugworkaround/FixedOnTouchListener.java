@@ -427,11 +427,10 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         final float[] pressure = new float[maxIdOccurring+1];
         final float[] size = new float[maxIdOccurring+1];
         final MotionEvent.PointerCoords[] all_axis_values = new MotionEvent.PointerCoords[maxIdOccurring+1];
-        for (int id = 0; id < maxIdOccurring+1; ++id) {
-          all_axis_values[id] = new MotionEvent.PointerCoords();
-        }
         for (int index = 0; index < pointerCount; ++index) {
           final int id = ids[index];
+          CHECK(all_axis_values[id] == null);  // I guess this could fail if there are dup ids for some reason
+          all_axis_values[id] = new MotionEvent.PointerCoords();
           if (h==historySize) {
             motionEvent.getPointerCoords(index, all_axis_values[id]);
           } else {
@@ -519,7 +518,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           String[] index2fingerprint = new String[n];  // nulls initially
           for (int i = 0; i < n; ++i) {
             LogicalMotionEvent e = list.get(i);
-            if (id < e.all_axis_values.length && !Float.isNaN(e.x(id))) {
+            if (id < e.all_axis_values.length && e.all_axis_values[id] != null) {
               String fingerprint = e.x(id)+","+e.y(id);
               index2fingerprint[i] = fingerprint;
             }
@@ -653,7 +652,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                                 (actionToString(e.action)+(e.action==MotionEvent.ACTION_MOVE?"  ":"("+e.actionId+")"))),
                                 STRINGIFY(e.ids)));
         for (int id = 0; id < e.all_axis_values.length; ++id) {
-          if (Float.isNaN(e.x(id))) {
+          if (e.all_axis_values[id] == null) {
             //sb.append(String.format("%29s", ""));
             sb.append(String.format("%52s", "", ""));
           } else {
@@ -663,8 +662,10 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             boolean parenthesized = false;
             if (i >= 1) {
               LogicalMotionEvent ePrev = list.get(i-1);
-              if (id < ePrev.all_axis_values.length && e.x(id) == ePrev.x(id)
-                                      && e.y(id) == ePrev.y(id)) {
+              if (id < ePrev.all_axis_values.length
+               && ePrev.all_axis_values[id] != null
+               && e.x(id) == ePrev.x(id)
+               && e.y(id) == ePrev.y(id)) {
                 if (PointerCoordsEquals(e.all_axis_values[id], ePrev.all_axis_values[id])) {
                   coordsString = "["+coordsString+"]";
                 } else {
@@ -696,6 +697,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                 // XXX this type need not be MOVE in order for bug to manifest..  must previous type be MOVE in order for bug to manifest?
 
                 if (id < ePrev.all_axis_values.length
+                 && ePrev.all_axis_values[id] != null
                  && e.pressure(id) == ePrev.pressure(id)
                  && e.size(id) == ePrev.size(id)
                  //&& (e.x(id) != ePrev.x(id) || e.y(id) != ePrev.y(id))   // XXX wrong!  need to be comparing with previous *corrected*
@@ -747,7 +749,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
 
     // Read back in a string produced by dump().
     public static ArrayList<LogicalMotionEvent> parseDump(String dumpString) throws java.text.ParseException {
-      final int verboseLevel = 0;  // 1: in/out, 2: gory details
+      final int verboseLevel = 0;  // 0: nothing, 1: in/out, 2: gory details
       if (verboseLevel >= 1) Log.i(TAG, "            in parseDump");
       final ArrayList<LogicalMotionEvent> answer = new ArrayList<LogicalMotionEvent>();
       final String[] lines = dumpString.split("\n");
@@ -847,6 +849,24 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         }
         CHECK_GE(ids.length, 1);
 
+        if (verboseLevel >= 2) Log.i(TAG, "                              ids = "+STRINGIFY(ids));
+        if (true) {
+          // Check that ids matches which columns were populated
+          final String idsString = matcher.group("ids");
+          CHECK(idsString.startsWith("{"));
+          CHECK(idsString.endsWith("}"));
+          final String[] idTokens = idsString.substring(/*start=*/1, /*end=*/idsString.length()-1).split(",\\s*");
+          final int shouldBeIds[] = new int[idTokens.length];
+          for (int i = 0; i < idTokens.length; ++i) {
+            shouldBeIds[i] = Integer.parseInt(idTokens[i]);
+          }
+          if (verboseLevel >= 2) Log.i(TAG, "                              shouldBeIds = "+STRINGIFY(shouldBeIds));
+          if (!STRINGIFY(ids).equals(STRINGIFY(shouldBeIds))) {
+            throw new AssertionError("claimed ids "+STRINGIFY(shouldBeIds)+", actually occurring ids "+STRINGIFY(ids));
+
+          }
+        }
+
         boolean isHistorical;
         int action, actionId;
         {
@@ -922,34 +942,34 @@ public class FixedOnTouchListener implements View.OnTouchListener {
               "0.332   61/217:    POINTER_UP(1) {0, 1}  0:[2476.14038,375.739075,1.37500000,0.251953125]    1:[976.660889,614.573181,1.35000002,0.270019531]    // <- should be A",
               "0.332   62/217:                  {0}     0: 2484.13745,371.741852,1.38750005,0.250976563",
               "0.339   63/217:           MOVE   {0}     0: 2489.33521,369.143951,1.38750005,0.250976563",
-              "0.339   63/217:           MOVE   {0}     0: 2489.33521,369.143951,1.38750005,0.250976563 FAKELABEL? 1:[976.660889,614.573181,1.35000002,0.270019531] FAKE   // fake fake ",
+              "0.339   63/217:           MOVE   {0, 1}  0: 2489.33521,369.143951,1.38750005,0.250976563 FAKELABEL? 1:[976.660889,614.573181,1.35000002,0.270019531] FAKE   // fake fake ",
             ""),
         // This was a bug (column 0 should have been empty)
           String.join("\n",
               "04-27 07:07:33.090  9196  9196 I MultiTouchBugWorkaroundActivity:             0.873  238/262:                  {0, 1, 2}  0: 1004.65118,1006.30115,1.00000000,0.211914063     1:[2156.25146,716.502441,0.750000000,0.208007813]    2:[2127.26147,1182.17908,0.837500036,0.196777344]",
               "04-27 07:07:33.091  9196  9196 I MultiTouchBugWorkaroundActivity:             0.881  239/262:           MOVE   {0, 1, 2}  0:[1004.65118,1006.30115,1.00000000,0.211914063]    1:[2156.25146,716.502441,0.750000000,0.208007813]    2: 2128.26099,1181.17969,0.850000024,0.197753906",
               "04-27 07:07:33.091  9196  9196 I MultiTouchBugWorkaroundActivity:             0.881  240/262:    POINTER_UP(0) {0, 1, 2}  0:[1004.65118,1006.30115,1.00000000,0.211914063]    1:[2156.25146,716.502441,0.750000000,0.208007813]    2:[2128.26099,1181.17969,0.850000024,0.197753906]",
-              "04-27 07:07:33.091  9196  9196 I MultiTouchBugWorkaroundActivity:             0.889  241/262:                  {1, 2}     0: 0.00000000,0.00000000,0.00000000,0.00000000 A   1:[2156.25146,716.502441,0.750000000,0.208007813]    2:[2128.26099,1181.17969,0.850000024,0.197753906]",
-              "04-27 07:07:33.091  9196  9196 I MultiTouchBugWorkaroundActivity:             0.897  242/262:                  {1, 2}     0:[0.00000000,0.00000000,0.00000000,0.00000000]A   1:(2156.25146,716.502441,0.750000000,0.205078125)    2:[2128.26099,1181.17969,0.850000024,0.197753906]",
-              "04-27 07:07:33.092  9196  9196 I MultiTouchBugWorkaroundActivity:             0.897  243/262:           MOVE   {1, 2}     0:[0.00000000,0.00000000,0.00000000,0.00000000]A   1:[2156.25146,716.502441,0.750000000,0.205078125]    2: 2129.26074,1179.18115,0.850000024,0.198730469",
-              "04-27 07:07:33.092  9196  9196 I MultiTouchBugWorkaroundActivity:             0.904  244/262:                  {1, 2}     0:[0.00000000,0.00000000,0.00000000,0.00000000]A   1:(2156.25146,716.502441,0.750000000,0.204589844)    2:[2129.26074,1179.18115,0.850000024,0.198730469]",
-              "04-27 07:07:33.092  9196  9196 I MultiTouchBugWorkaroundActivity:             0.904  245/262:                  {1, 2}     0:[0.00000000,0.00000000,0.00000000,0.00000000]A   1:[2156.25146,716.502441,0.750000000,0.204589844]    2: 2130.26050,1178.18176,0.837500036,0.201171875",
-              "04-27 07:07:33.092  9196  9196 I MultiTouchBugWorkaroundActivity:             0.911  246/262:                  {1, 2}     0:[0.00000000,0.00000000,0.00000000,0.00000000]A   1:[2156.25146,716.502441,0.750000000,0.204589844]    2:[2130.26050,1178.18176,0.837500036,0.201171875]",
-              "04-27 07:07:33.093  9196  9196 I MultiTouchBugWorkaroundActivity:             0.911  247/262:           MOVE   {1, 2}     0:[0.00000000,0.00000000,0.00000000,0.00000000]A   1:[2156.25146,716.502441,0.750000000,0.204589844]    2: 2132.25977,1176.18323,0.837500036,0.202148438",
-              "04-27 07:07:33.093  9196  9196 I MultiTouchBugWorkaroundActivity:             0.919  248/262:           MOVE   {1, 2}     0:[0.00000000,0.00000000,0.00000000,0.00000000]A   1:[2156.25146,716.502441,0.750000000,0.204589844]    2: 2134.25903,1174.18457,0.837500036,0.203125000",
-              "04-27 07:07:33.093  9196  9196 I MultiTouchBugWorkaroundActivity:             0.928  249/262:                  {1, 2}     0:[0.00000000,0.00000000,0.00000000,0.00000000]A   1:(2156.25146,716.502441,0.750000000,0.203613281)    2:[2134.25903,1174.18457,0.837500036,0.203125000]",
-              "04-27 07:07:33.094  9196  9196 I MultiTouchBugWorkaroundActivity:             0.928  250/262:                  {1, 2}     0:[0.00000000,0.00000000,0.00000000,0.00000000]A   1:[2156.25146,716.502441,0.750000000,0.203613281]    2: 2136.25830,1173.18530,0.837500036,0.206054688",
-              "04-27 07:07:33.094  9196  9196 I MultiTouchBugWorkaroundActivity:             0.936  251/262:                  {1, 2}     0:[0.00000000,0.00000000,0.00000000,0.00000000]A   1:(2156.25146,716.502441,0.737500012,0.204589844)    2:[2136.25830,1173.18530,0.837500036,0.206054688]",
-              "04-27 07:07:33.094  9196  9196 I MultiTouchBugWorkaroundActivity:             0.936  252/262:                  {1, 2}     0:[0.00000000,0.00000000,0.00000000,0.00000000]A   1:[2156.25146,716.502441,0.737500012,0.204589844]    2: 2137.25806,1173.18530,0.837500036,0.206054688",
-              "04-27 07:07:33.094  9196  9196 I MultiTouchBugWorkaroundActivity:             0.945  253/262:           MOVE   {1, 2}     0:[0.00000000,0.00000000,0.00000000,0.00000000]A   1:[2156.25146,716.502441,0.737500012,0.204589844]    2: 2138.25757,1174.18457,0.824999988,0.207031250",
-              "04-27 07:07:33.094  9196  9196 I MultiTouchBugWorkaroundActivity:             0.953  254/262:                  {1, 2}     0:[0.00000000,0.00000000,0.00000000,0.00000000]A   1:(2156.25146,716.502441,0.737500012,0.201660156)    2:[2138.25757,1174.18457,0.824999988,0.207031250]",
-              "04-27 07:07:33.095  9196  9196 I MultiTouchBugWorkaroundActivity:             0.953  255/262:                  {1, 2}     0:[0.00000000,0.00000000,0.00000000,0.00000000]A   1:[2156.25146,716.502441,0.737500012,0.201660156]    2: 2138.25757,1175.18384,0.824999988,0.209472656",
-              "04-27 07:07:33.095  9196  9196 I MultiTouchBugWorkaroundActivity:             0.962  256/262:                  {1, 2}     0:[0.00000000,0.00000000,0.00000000,0.00000000]A   1: 2161.24951,718.501038,0.725000024,0.200683594     2:[2138.25757,1175.18384,0.824999988,0.209472656]",
-              "04-27 07:07:33.095  9196  9196 I MultiTouchBugWorkaroundActivity:             0.962  257/262:           MOVE   {1, 2}     0:[0.00000000,0.00000000,0.00000000,0.00000000]A   1:[2161.24951,718.501038,0.725000024,0.200683594]    2:(2138.25757,1175.18384,0.824999988,0.210449219)",
-              "04-27 07:07:33.096  9196  9196 I MultiTouchBugWorkaroundActivity:             0.970  258/262:                  {1, 2}     0:[0.00000000,0.00000000,0.00000000,0.00000000]A   1: 2162.24927,721.498962,0.712500036,0.199218750     2:[2138.25757,1175.18384,0.824999988,0.210449219]",
-              "04-27 07:07:33.096  9196  9196 I MultiTouchBugWorkaroundActivity:             0.970  259/262:           MOVE   {1, 2}     0:[0.00000000,0.00000000,0.00000000,0.00000000]A   1:[2162.24927,721.498962,0.712500036,0.199218750]    2: 2139.25732,1176.18323,0.812500000,0.214355469",
-              "04-27 07:07:33.096  9196  9196 I MultiTouchBugWorkaroundActivity:             0.977  260/262:    POINTER_UP(1) {1, 2}     0:[0.00000000,0.00000000,0.00000000,0.00000000]A   1:[2162.24927,721.498962,0.712500036,0.199218750]    2:[2139.25732,1176.18323,0.812500000,0.214355469]",
-              "04-27 07:07:33.096  9196  9196 I MultiTouchBugWorkaroundActivity:             0.977  261/262:            UP(2) {2}        0:[0.00000000,0.00000000,0.00000000,0.00000000]A   1: 0.00000000,0.00000000,0.00000000,0.00000000 A   2:[2139.25732,1176.18323,0.812500000,0.214355469]",
+              "04-27 07:07:33.091  9196  9196 I MultiTouchBugWorkaroundActivity:             0.889  241/262:                  {1, 2}                                                        1:[2156.25146,716.502441,0.750000000,0.208007813]    2:[2128.26099,1181.17969,0.850000024,0.197753906]",
+              "04-27 07:07:33.091  9196  9196 I MultiTouchBugWorkaroundActivity:             0.897  242/262:                  {1, 2}                                                        1:(2156.25146,716.502441,0.750000000,0.205078125)    2:[2128.26099,1181.17969,0.850000024,0.197753906]",
+              "04-27 07:07:33.092  9196  9196 I MultiTouchBugWorkaroundActivity:             0.897  243/262:           MOVE   {1, 2}                                                        1:[2156.25146,716.502441,0.750000000,0.205078125]    2: 2129.26074,1179.18115,0.850000024,0.198730469",
+              "04-27 07:07:33.092  9196  9196 I MultiTouchBugWorkaroundActivity:             0.904  244/262:                  {1, 2}                                                        1:(2156.25146,716.502441,0.750000000,0.204589844)    2:[2129.26074,1179.18115,0.850000024,0.198730469]",
+              "04-27 07:07:33.092  9196  9196 I MultiTouchBugWorkaroundActivity:             0.904  245/262:                  {1, 2}                                                        1:[2156.25146,716.502441,0.750000000,0.204589844]    2: 2130.26050,1178.18176,0.837500036,0.201171875",
+              "04-27 07:07:33.092  9196  9196 I MultiTouchBugWorkaroundActivity:             0.911  246/262:                  {1, 2}                                                        1:[2156.25146,716.502441,0.750000000,0.204589844]    2:[2130.26050,1178.18176,0.837500036,0.201171875]",
+              "04-27 07:07:33.093  9196  9196 I MultiTouchBugWorkaroundActivity:             0.911  247/262:           MOVE   {1, 2}                                                        1:[2156.25146,716.502441,0.750000000,0.204589844]    2: 2132.25977,1176.18323,0.837500036,0.202148438",
+              "04-27 07:07:33.093  9196  9196 I MultiTouchBugWorkaroundActivity:             0.919  248/262:           MOVE   {1, 2}                                                        1:[2156.25146,716.502441,0.750000000,0.204589844]    2: 2134.25903,1174.18457,0.837500036,0.203125000",
+              "04-27 07:07:33.093  9196  9196 I MultiTouchBugWorkaroundActivity:             0.928  249/262:                  {1, 2}                                                        1:(2156.25146,716.502441,0.750000000,0.203613281)    2:[2134.25903,1174.18457,0.837500036,0.203125000]",
+              "04-27 07:07:33.094  9196  9196 I MultiTouchBugWorkaroundActivity:             0.928  250/262:                  {1, 2}                                                        1:[2156.25146,716.502441,0.750000000,0.203613281]    2: 2136.25830,1173.18530,0.837500036,0.206054688",
+              "04-27 07:07:33.094  9196  9196 I MultiTouchBugWorkaroundActivity:             0.936  251/262:                  {1, 2}                                                        1:(2156.25146,716.502441,0.737500012,0.204589844)    2:[2136.25830,1173.18530,0.837500036,0.206054688]",
+              "04-27 07:07:33.094  9196  9196 I MultiTouchBugWorkaroundActivity:             0.936  252/262:                  {1, 2}                                                        1:[2156.25146,716.502441,0.737500012,0.204589844]    2: 2137.25806,1173.18530,0.837500036,0.206054688",
+              "04-27 07:07:33.094  9196  9196 I MultiTouchBugWorkaroundActivity:             0.945  253/262:           MOVE   {1, 2}                                                        1:[2156.25146,716.502441,0.737500012,0.204589844]    2: 2138.25757,1174.18457,0.824999988,0.207031250",
+              "04-27 07:07:33.094  9196  9196 I MultiTouchBugWorkaroundActivity:             0.953  254/262:                  {1, 2}                                                        1:(2156.25146,716.502441,0.737500012,0.201660156)    2:[2138.25757,1174.18457,0.824999988,0.207031250]",
+              "04-27 07:07:33.095  9196  9196 I MultiTouchBugWorkaroundActivity:             0.953  255/262:                  {1, 2}                                                        1:[2156.25146,716.502441,0.737500012,0.201660156]    2: 2138.25757,1175.18384,0.824999988,0.209472656",
+              "04-27 07:07:33.095  9196  9196 I MultiTouchBugWorkaroundActivity:             0.962  256/262:                  {1, 2}                                                        1: 2161.24951,718.501038,0.725000024,0.200683594     2:[2138.25757,1175.18384,0.824999988,0.209472656]",
+              "04-27 07:07:33.095  9196  9196 I MultiTouchBugWorkaroundActivity:             0.962  257/262:           MOVE   {1, 2}                                                        1:[2161.24951,718.501038,0.725000024,0.200683594]    2:(2138.25757,1175.18384,0.824999988,0.210449219)",
+              "04-27 07:07:33.096  9196  9196 I MultiTouchBugWorkaroundActivity:             0.970  258/262:                  {1, 2}                                                        1: 2162.24927,721.498962,0.712500036,0.199218750     2:[2138.25757,1175.18384,0.824999988,0.210449219]",
+              "04-27 07:07:33.096  9196  9196 I MultiTouchBugWorkaroundActivity:             0.970  259/262:           MOVE   {1, 2}                                                        1:[2162.24927,721.498962,0.712500036,0.199218750]    2: 2139.25732,1176.18323,0.812500000,0.214355469",
+              "04-27 07:07:33.096  9196  9196 I MultiTouchBugWorkaroundActivity:             0.977  260/262:    POINTER_UP(1) {1, 2}                                                        1:[2162.24927,721.498962,0.712500036,0.199218750]    2:[2139.25732,1176.18323,0.812500000,0.214355469]",
+              "04-27 07:07:33.096  9196  9196 I MultiTouchBugWorkaroundActivity:             0.977  261/262:            UP(2) {2}                                                                                                              2:[2139.25732,1176.18323,0.812500000,0.214355469]",
           ""),
       };  // dumpStrings
 
