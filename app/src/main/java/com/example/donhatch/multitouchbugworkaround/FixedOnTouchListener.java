@@ -737,7 +737,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
 
     // Read back in a string produced by dump().
     public static ArrayList<LogicalMotionEvent> parseDump(String dumpString) throws java.text.ParseException {
-      final int verboseLevel = 2;
+      final int verboseLevel = 0;  // 1: in/out, 2: gory details
       if (verboseLevel >= 1) Log.i(TAG, "            in parseDump");
       final ArrayList<LogicalMotionEvent> answer = new ArrayList<LogicalMotionEvent>();
       final String[] lines = dumpString.split("\n");
@@ -748,7 +748,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           "(?<logcatstuff>\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+)?" +  // 0
           "(?<timestamp>[\\d.]+)\\s+" +  // 1
           "(?<i>\\d+)/(?<n>\\d+):\\s+" +  // 2,3
-          "(?<action>(\\S+)\\s+)?" +  // 4,5
+          "((?<action>(\\S+))\\s+)?" +  // 4,5
           "(?<ids>\\{.*\\})" +  // 6
           "(?<perIdData>(?<lastPerIdData>\\s+(\\d+:[^:/]+))+)" +  // 7,8
           "\\s*(?<comment>//.*)?" +  // 9
@@ -767,7 +767,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         if (!matcher.matches()) {
           throw new java.text.ParseException("Unrecognized line "+STRINGIFY(line), 0);
         }
-        CHECK_EQ(matcher.groupCount(), 11);
+        CHECK_EQ(matcher.groupCount(), 12);
         if (verboseLevel >= 2) Log.i(TAG, "                      logcatstuff = "+STRINGIFY(matcher.group("logcatstuff")));
         if (verboseLevel >= 2) Log.i(TAG, "                      timestamp = "+STRINGIFY(matcher.group("timestamp")));
         if (verboseLevel >= 2) Log.i(TAG, "                      i = "+STRINGIFY(matcher.group("i")));
@@ -796,7 +796,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           String punctuationMaybe = perIdDataMatcher.group("punctuationMaybe");
           if ((stuff.startsWith("(") && stuff.endsWith(")"))
            || (stuff.startsWith("[") && stuff.endsWith("]"))) {
-            stuff = stuff.substring(1, stuff.length()-2);
+            stuff = stuff.substring(/*start=*/1, /*end=*/stuff.length()-1);
           }
           String[] stuffTokens = stuff.split(",");
           if (verboseLevel >= 2) Log.i(TAG, "                          perIdDatum = "+STRINGIFY(perIdDatum));
@@ -817,8 +817,6 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         CHECK(perIdDataMatcher.hitEnd());
 
         final long eventTimeMillis = (long)Math.round(Double.parseDouble(matcher.group("timestamp")) * 1000.);
-        final int action = 0;  // XXX
-        final int actionId = 0; // XXX
         final int[] ids = new int[idsArrayList.size()];
         int max_id_occurring = -1;
         for (int index = 0; index < ids.length; ++index) {
@@ -837,7 +835,34 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           all_axis_values[id].setAxisValue(MotionEvent.AXIS_PRESSURE, values[2]);
           all_axis_values[id].setAxisValue(MotionEvent.AXIS_SIZE, values[3]);
         }
-        boolean isHistorical = false; // XXX
+        CHECK_GE(ids.length, 1);
+
+        boolean isHistorical;
+        int action, actionId;
+        {
+          String actionString = matcher.group("action");
+          if (actionString == null) {
+            isHistorical = true;
+            action = MotionEvent.ACTION_MOVE;
+            actionId = ids[0];
+          } else if (actionString.equals("MOVE")) {
+            isHistorical = false;
+            action = MotionEvent.ACTION_MOVE;
+            actionId = ids[0];
+          } else {
+            isHistorical = false;
+            CHECK(actionString.endsWith(")"));
+            CHECK(actionString.charAt(actionString.length()-3) == '(');  // CBB: assumes max id <= 9
+      if (verboseLevel >= 1) Log.i(TAG, "            WTF "+(actionString.length()-2));
+            actionId = Integer.parseInt(actionString.substring(/*start=*/actionString.length()-2, /*end=*/actionString.length()-1));
+            String actionName = actionString.substring(/*start=*/0, /*end=*/actionString.length()-3);
+            if (actionName.equals("DOWN")) action = MotionEvent.ACTION_DOWN;
+            else if (actionName.equals("POINTER_DOWN")) action = MotionEvent.ACTION_POINTER_DOWN;
+            else if (actionName.equals("POINTER_UP")) action = MotionEvent.ACTION_POINTER_UP;
+            else if (actionName.equals("UP")) action = MotionEvent.ACTION_UP;
+            else throw new AssertionError("unrecognized action "+STRINGIFY(actionName));
+          }
+        }
         answer.add(new LogicalMotionEvent(isHistorical, eventTimeMillis, action, actionId, ids, all_axis_values));
       }
       if (verboseLevel >= 1) Log.i(TAG, "            out parseDump, returning "+answer.size()+" logical events");
