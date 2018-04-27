@@ -9,6 +9,20 @@
 // TODO: dump to a file instead of logcat, so it's not subject to size and rate constraints
 
 // BUG: See BAD00-- still not fixed
+// BUG: See BAD01-- still not fixed
+// BUG: Known ways to mess it up:
+//      1.
+//          - 0 down
+//          - 1 down
+//          - 0 up
+//          - with 1 moving: 0&2 down simultanously and move.
+//          - if it doesn't work, 0&2 up and repeat previous step.
+//      2.
+//          - 0 down
+//          - 1 down
+//          - 2 down
+//          - with 2 moving: 0&1 down simultaneously and move.
+//          - if it doesn't work, 0&1 up and repeat previous step.
 //
 // BUG: apparently the following gets snargled up:  the condition isn't quite right when there are two POINTER_DOWNs at the same time.
 /*
