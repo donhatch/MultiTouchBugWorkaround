@@ -214,17 +214,10 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     public boolean onTouch(View view, MotionEvent unfixed, MotionEvent fixed);
   }
 
-  // TODO: constructors for these?  not sure
-  public View.OnTouchListener wrappedForUnfixed = null;
-  public OnTouchListener2 wrappedForUnfixedAndFixed = null;
-  public View.OnTouchListener wrappedForFixed = null;
+  public View.OnTouchListener wrapped = null;
 
-  public FixedOnTouchListener(View.OnTouchListener wrappedForFixed) {
-    this.wrappedForFixed = wrappedForFixed;
-  }
-
-  public FixedOnTouchListener(OnTouchListener2 wrappedForUnfixedAndFixed) {
-    this.wrappedForUnfixedAndFixed = wrappedForUnfixedAndFixed;
+  public FixedOnTouchListener(View.OnTouchListener wrapped) {
+    this.wrapped = wrapped;
   }
 
   private static final String TAG = MultiTouchBugWorkaroundActivity.class.getSimpleName();  // XXX
@@ -1176,9 +1169,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           }
         }
         LogicalMotionEvent.breakDown(fixed, fixedLogicalMotionEventsSinceFirstDown);  // for post-mortem analysis
-        if (wrappedForUnfixed != null) answer = wrappedForUnfixed.onTouch(view, unfixed);
-        if (wrappedForUnfixedAndFixed != null) answer = wrappedForUnfixedAndFixed.onTouch(view, unfixed, fixed);  // clobbers previous answer if any
-        if (wrappedForFixed != null) answer = wrappedForFixed.onTouch(view, fixed);  // clobbers previous answer if any
+        answer = wrapped.onTouch(view, fixed);
       } finally {
         if (fixed != null) {
           fixed.recycle();

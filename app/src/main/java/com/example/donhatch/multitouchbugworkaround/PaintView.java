@@ -67,13 +67,19 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
     super(context);
     Log.i(TAG, "    in PaintView ctor");
 
-    if (true) {
-      setOnTouchListener(new FixedOnTouchListener(new MyTouchListener2()));
-    } else if (true) {
-      setOnTouchListener(new FixedOnTouchListener(new MyTouchListener()));
-    } else {
-      setOnTouchListener(new MyTouchListener());
-    }
+    setOnTouchListener(new FixedOnTouchListener(new View.OnTouchListener() {
+      @Override
+      public boolean onTouch(View view, MotionEvent fixedEvent) {
+        applyEventToStuff(fixedEvent, fixedStuff);
+        return true;
+      }
+    }) {
+      @Override
+      public boolean onTouch(View view, MotionEvent unfixedEvent) {
+        applyEventToStuff(unfixedEvent, unfixedStuff);
+        return super.onTouch(view, unfixedEvent);
+      }
+    });
 
     addView(new Button(context) {{
       setText("Clear");
@@ -98,21 +104,6 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
         }
       });
     }});
-    Log.i(TAG, "    out PaintView ctor");
-  }
-
-  public PaintView(Context context, AttributeSet attrs) {
-    super(context, attrs);
-  }
-
-  public PaintView(Context context, AttributeSet attrs, int defStyle) {
-    super(context, attrs, defStyle);
-  }
-
-  @Override
-  protected void onAttachedToWindow() {
-    Log.i(TAG, "        in PaintView onAttachedToWindow");
-    super.onAttachedToWindow();
 
     final int colors[] = new int[] {
       Color.RED,
@@ -136,7 +127,7 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
       mFingerPaints[i].setStrokeCap(Paint.Cap.BUTT);
     }
 
-    Log.i(TAG, "        out PaintView onAttachedToWindow");
+    Log.i(TAG, "    out PaintView ctor");
   }
 
   @Override
