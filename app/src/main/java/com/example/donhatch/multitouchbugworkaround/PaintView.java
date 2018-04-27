@@ -70,13 +70,19 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
     setOnTouchListener(new FixedOnTouchListener(new View.OnTouchListener() {
       @Override
       public boolean onTouch(View view, MotionEvent fixedEvent) {
+        // Record the fixed event.
         applyEventToStuff(fixedEvent, fixedStuff);
         return true;
       }
     }) {
       @Override
       public boolean onTouch(View view, MotionEvent unfixedEvent) {
+        // We first get the event, with the bug, here.
+        // Record it.
         applyEventToStuff(unfixedEvent, unfixedStuff);
+        // Then pass it through to the FixedOnTouchListener,
+        // which creates a fixed event which is passed
+        // to our OnTouchListener's onTouch() above.
         return super.onTouch(view, unfixedEvent);
       }
     });
