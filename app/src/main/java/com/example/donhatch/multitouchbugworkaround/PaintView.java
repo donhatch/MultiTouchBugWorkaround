@@ -50,8 +50,8 @@ public class PaintView extends FrameLayout {
   private static final String TAG = MultiTouchBugWorkaroundActivity.class.getSimpleName();
 
   public static final int MAX_FINGERS = 10;
-  public static final float STROKE_WIDTH = 10.0f;
-  public static final float SHADOW_RADIUS = 5.f;
+  public static final float STROKE_WIDTH = 6.0f;
+  public static final float SHADOW_RADIUS = 3.f;
 
   private Paint[] mFingerPaints = new Paint[MAX_FINGERS];;
   private Paint mShadowPaint;

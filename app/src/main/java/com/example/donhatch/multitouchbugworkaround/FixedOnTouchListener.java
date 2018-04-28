@@ -26,12 +26,11 @@
 //                  Q: can we characterize exactly when a stay-same is or is not an indicator of bugging or of not bugging?
 //              - or all three.  omg.  BAD04
 //          - if it doesn't work, 0&2 up and repeat previous step.
-//      2.
-//          - 0 down
-//          - 1 down
+//      2. (easier... I think)
+//          - 0&1 down
 //          - 2 down
 //          - 0&1 up
-//          - with 2 moving: 0&1 down simultaneously and move.
+//          - with 2 moving: 0&1 down simultaneously (two fingers locked together works nicely) and move.
 //              - id0=0 id1=2
 //              - or all three!!! omg.   BAD03.
 //		- or, it was correctly doing id0=0 id1=2,
@@ -149,7 +148,7 @@
 //  - first appearance of wrongness is always in idNonzero, always during the initial static x,y of id0 on its POINTER_DOWN  (which always seems to be about 40 to 60 ms, regardless of whether bugging)
 //  - that first bad x,y, which is in idNonzero as previously stated, is always 16 to 17 ms after id0's POINTER_DOWN  (or, occasionally, 25ms)
 //  - when bugging, there are no dups other than the wrong x,y's  (because dups *turn into* the wrong x,y's)
-//    therefore if we see a dup other than the anchor, the bug is NOT happening.
+//    therefore if we see a dup other than the anchor, the bug is NOT happening.  (update: with some exceptions I found later)
 //  - when bugging, wrong x,y values always occur when it would otherwise be a dup-- which, I think, occur when some *other* id changed?  (or, maybe, same id pressure changed)
 //  - when the bug happens, idNonzero's x,y always:
 //      - starts at anchor, maybe stays there a while with same pressure&size, goes to 1 other value (same or diff p&s), immediately comes back to anchor with same p&s as prev.
@@ -195,8 +194,9 @@ and another:
 //      - on id 0, when it affects x,y, timestamp has typically *not* advanced, but once in a while it has advanced (not consistent)
 //      - on id non-0, when it affects x,y, timestamp has typically (I think maybe always?)  advanced by 8 or 9 ms
 //        (except when it happened on 0's POINTER_UP, in which case there was no time-advace. argh!), in which case there was no time-advace. argh!)
+//	- so I don't think I can get it reliably.
 // Correlation with packet boundaries:
-//      - none.
+//      - none.  (XXX wait a minute, isn't the ARM event always the end of a packet boundary??)
 // Correlation with  event-happening-immedately-after-POINTER_DOWN(0)-is-MOVE-of-idNonzero-with-1-historical:
 //      - when bugging, seems to be always that syndrome  (x,y of the historical may be same, maybe different)
 //      - when not bugging: can be that, or can be something else, e.g. 2 historical, 2nd same as first.
@@ -204,7 +204,7 @@ and another:
 // * HOW DO I WRAP THIS UP?
 //   Need a heuristic that always works in practice.
 //   It'll include things like:
-//      - consider things safe again N ms (or N events?) after id0 or idnonzero went up
+//      - consider things safe again N ms (or N events?) after id0 or idnonzero went up?
 //   - Sloppy proposal #1:
 //       - Get the anchors (POINTER_DOWN x,y for id0, the primary x,y of the following event for idNonzero),
 //         and simply consider them forbidden (i.e. force x,y to not move, instead) until/unless safety is declared (or until a new POINTER_DOWN(0) occurs).
@@ -967,10 +967,9 @@ public class FixedOnTouchListener implements View.OnTouchListener {
   }
 
   // The sequence of events that arms the fixer is two consecutive events:
-  //     1. POINTER_DOWN(0) with exactly one other pointer id1 already down, followed by:
-  //            anchor0x,anchor0y = the x,y of that event
-  //     2. MOVE, with 0 and id1 down.
-  //            anchor1x,anchor1y = the primary (non-historical) x,y of that event
+  //     1. POINTER_DOWN(0) with exactly one other pointer id1 already down  (anchor0x,anchor0y = the x,y of that event)
+  //        followed by:
+  //     2. MOVE, with 0 and id1 down  (anchor1x,anchor1y = the primary (non-historical) x,y of that event)
   // While armed:
   //        if id 0's x,y appears to be anchor0x,anchor0y, change it to its previous value
   //        if id id1's x,y appears to be anchor1x,anchor1y, change it to its previous value
@@ -985,18 +984,211 @@ public class FixedOnTouchListener implements View.OnTouchListener {
   //       generally only for about 1/10 of a second, but who knows)
   //     - we could disarm id 0 when it goes UP, and disarm id id1 when it goes up, though.
   // UPDATE: actually the going-down id is sometimes not zero (infrequently).  We call it id0.
+  //
+  // UPDATE: revised description:
+  //    1. N(>=1) consecutive POINTER_DOWNs when there was previously exactly one other pointer already down
+  //            (each of the newly-down id's anchor x,y is the x,y of the respective POINTER_DOWN event)
+  //       immediately followed by:
+  //    2. MOVE, with all N+1 pointers still down.
+  //            (the originally-down id's anchor x,y is the primary (non-historical) x,y of this move event)
+  //    From then on, it's symmetric: each of the N+1 participating ids
+  //    keep bugging until they go up, or until it is the only one left
+  //    (in which case it may keep bugging on the other guy's POINTER_UP and/or a small handful of subsequent lone MOVEs).
+  //
+  // Q: once two or more are bugging, can additional ids be added to the buggings?
+  // Q: is there anything about the MOVE that is an indicator of whether the bug is happening?
+  //    I've seen:
+  //       BUG, id1 MOVE of size 2, new new old  (i.e. down new, historical new, primary same as historical)
+  //       BUG, id1 MOVE of size 2, old new new
+  //       BUG, id1 MOVE of size 2, new new new
+  //       NOT BUG, id1 MOVE of size 2, old new old
+  //       NOT BUG, id1 MOVE of size 2, new old old
+  //       NOT BUG, id1 MOVE of size 2, old new new
+  //       NOT BUG, id1 MOVE of size 4, old new old new
+  //       NOT BUG, id1 MOVE of size 4, old new old new old
+  //       NOT BUG, id1 MOVE of size 4, old old(but non-position changed) old new old
+  //    Nope, I don't think any of it is an indication.
+  // Q: is the next thing after (1 or more) POINTER_DOWN always a MOVE of size at least 2?
+  // PA: well, assumpt it and see if it breaks.
+  // PA: well, if it's the 3rd or more down, I've seen a historyless MOVE immediately after.  but that one wasnt bugging
+/*
+===========================================
+BUG:
+---
+            2.346  417/647:                  {1}                                 1: 2480.13892,823.428162 A
+            2.350  418/647:           MOVE   {1}                                 1: 2480.63867,822.428833
+            2.354  419/647:  POINTER_DOWN(0) {0,1}  0: 1694.41174,929.354614 A@  1: 2480.13892,823.428162 A
+(ARMING: id0=0 id1=1 anchor0=1694.4117,929.3546)
+            2.354  420/647:                  {0,1}  0:[1694.41174,929.354614]A   1: 2480.13892,821.429565 B
+            2.361  421/647:           MOVE   {0,1}  0:[1694.41174,929.354614]A   1:[2480.13892,821.429565]B@
+(ARMED: id0=0 id1=1 anchor0=1694.4117,929.3546 anchor1=2480.139,821.42957 lastKnownGood0=1694.4117,929.3546 lastKnownGood1=2480.139,821.42957)
+            2.363  422/647:                  {0,1}  0:(1694.41174,929.354614)A   1:[2480.13892,821.429565]B
+            2.363  423/647:           MOVE   {0,1}  0:[1694.41174,929.354614]A   1: 2481.13867,818.431641
+            2.371  424/647:                  {0,1}  0:(1694.41174,929.354614)A   1: 2480.13892,821.429565 B?
+---
+            0.624  123/208:                  {1}                                 1: 2290.20483,857.404541 A
+            0.629  124/208:           MOVE   {1}                                 1: 2290.20483,856.904907
+            0.633  125/208:  POINTER_DOWN(0) {0,1}  0: 1618.43811,668.535706 A@  1: 2290.20483,857.404541 A
+(ARMING: id0=0 id1=1 anchor0=1618.4381,668.5357)
+            0.633  126/208:                  {0,1}  0:[1618.43811,668.535706]A   1: 2291.20459,857.404541 B
+            0.637  127/208:           MOVE   {0,1}  0:[1618.43811,668.535706]A   1:[2291.20459,857.404541]B@
+(ARMED: id0=0 id1=1 anchor0=1618.4381,668.5357 anchor1=2291.2046,857.40454 lastKnownGood0=1618.4381,668.5357 lastKnownGood1=2291.2046,857.40454)
+            0.642  128/208:                  {0,1}  0:(1618.43811,668.535706)A   1:[2291.20459,857.404541]B
+            0.642  129/208:           MOVE   {0,1}  0:[1618.43811,668.535706]A   1:[2291.20459,857.404541]B
+            0.650  130/208:           MOVE   {0,1}  0:(1618.43811,668.535706)A   1:[2291.20459,857.404541]B
+            0.650  131/208:           MOVE   {0,1}  0:[1618.43811,668.535706]A   1: 2291.20459,856.405273
+            0.659  132/208:                  {0,1}  0:(1618.43811,668.535706)A   1: 2291.20459,857.404541 B?
+---
+            0.892  180/235:           MOVE   {1}                                 1: 2269.21216,1176.18311
+            0.896  181/235:           MOVE   {1}                                 1: 2270.21167,1176.18323
+            0.905  182/235:  POINTER_DOWN(0) {0,1}  0: 1646.42834,1063.26160 A@  1:[2270.21167,1176.18323]
+(ARMING: id0=0 id1=1 anchor0=1646.4283,1063.2616)
+            0.905  183/235:                  {0,1}  0:[1646.42834,1063.26160]A   1: 2270.21167,1175.18384
+            0.909  184/235:           MOVE   {0,1}  0:[1646.42834,1063.26160]A   1: 2270.21167,1174.68408 A@
+(ARMED: id0=0 id1=1 anchor0=1646.4283,1063.2616 anchor1=2270.2117,1174.6841 lastKnownGood0=1646.4283,1063.2616 lastKnownGood1=2270.2117,1174.6841)
+            0.913  185/235:                  {0,1}  0:(1646.42834,1063.26160)A   1:[2270.21167,1174.68408]A
+            0.913  186/235:                  {0,1}  0:[1646.42834,1063.26160]A   1: 2271.21143,1174.18457
+            0.922  187/235:                  {0,1}  0:(1646.42834,1063.26160)A   1: 2270.21167,1174.68408 A?
+            0.922  188/235:                  {0,1}  0:[1646.42834,1063.26160]A   1: 2272.21118,1173.18530
+            0.930  189/235:                  {0,1}  0:(1646.42834,1063.26160)A   1: 2270.21167,1174.68408 A?
+            0.930  190/235:           MOVE   {0,1}  0:[1646.42834,1063.26160]A   1:(2270.21167,1174.68408)A?
+---
+            0.833  159/307:           MOVE   {1}                                 1: 2366.17847,1074.75366
+            0.838  160/307:                  {1}                                 1: 2367.17822,1075.25330 A
+            0.842  161/307:           MOVE   {1}                                 1: 2367.67822,1074.75366
+            0.846  162/307:  POINTER_DOWN(0) {0,1}  0: 1781.38147,1002.30396 A@  1: 2367.17822,1075.25330 A
+(ARMING: id0=0 id1=1 anchor0=1781.3815,1002.30396)
+            0.846  163/307:                  {0,1}  0:[1781.38147,1002.30396]A   1: 2367.17822,1073.25464
+            0.848  164/307:           MOVE   {0,1}  0:[1781.38147,1002.30396]A   1: 2367.17822,1072.93225 B@
+(ARMED: id0=0 id1=1 anchor0=1781.3815,1002.30396 anchor1=2367.1782,1072.9323 lastKnownGood0=1781.3815,1002.30396 lastKnownGood1=2367.1782,1072.9323)
+            0.855  165/307:                  {0,1}  0:(1781.38147,1002.30396)A   1:[2367.17822,1072.93225]B
+            0.855  166/307:                  {0,1}  0:[1781.38147,1002.30396]A   1: 2368.17773,1072.25537
+            0.863  167/307:                  {0,1}  0:(1781.38147,1002.30396)A   1: 2367.17822,1072.93225 B?
+            0.863  168/307:           MOVE   {0,1}  0:[1781.38147,1002.30396]A   1: 2368.17773,1070.25671
+---
+            0.612  108/245:                  {1}                                 1: 1959.31970,1212.15820 A
+            0.620  109/245:           MOVE   {1}                                 1: 1959.76038,1211.71765
+            0.629  110/245:  POINTER_DOWN(0) {0,1}  0: 1123.60986,906.370544 A@  1: 1959.31970,1212.15820 A
+(ARMING: id0=0 id1=1 anchor0=1123.6099,906.37054)
+            0.629  111/245:                  {0,1}  0:[1123.60986,906.370544]A   1: 1960.31934,1212.15820
+            0.637  112/245:           MOVE   {0,1}  0:[1123.60986,906.370544]A   1: 1960.77820,1212.15820 B@
+(ARMED: id0=0 id1=1 anchor0=1123.6099,906.37054 anchor1=1960.7782,1212.1582 lastKnownGood0=1123.6099,906.37054 lastKnownGood1=1960.7782,1212.1582)
+            0.638  113/245:           MOVE   {0,1}  0:(1123.60986,906.370544)A   1:[1960.77820,1212.15820]B
+            0.638  114/245:           MOVE   {0,1}  0:[1123.60986,906.370544]A   1: 1960.31934,1211.15894
+            0.646  115/245:           MOVE   {0,1}  0:(1123.60986,906.370544)A   1: 1960.77820,1212.15820 B?
+---
+===========================================
+NOT BUG:
+---
+            0.382   65/114:           MOVE   {0}    0: 651.273804,1085.74585
+            0.386   66/114:           MOVE   {0}    0: 650.774048,1085.24634
+            0.386   67/114:  POINTER_DOWN(1) {0,1}  0:[650.774048,1085.24634]    1: 1840.36108,1170.18738  @
+(ARMING: id0=1 id1=0 anchor0=1840.3611,1170.1874)
+            0.395   68/114:                  {0,1}  0: 649.774414,1084.24707     1:[1840.36108,1170.18738]
+            0.395   69/114:           MOVE   {0,1}  0:[649.774414,1084.24707] @  1:(1840.36108,1170.18738)
+(ARMED: id0=1 id1=0 anchor0=1840.3611,1170.1874 anchor1=649.7744,1084.2471 lastKnownGood0=1840.3611,1170.1874 lastKnownGood1=649.7744,1084.2471)
+            0.403   70/114:                  {0,1}  0: 648.774719,1084.24707     1:[1840.36108,1170.18738]
+            0.403   71/114:           MOVE   {0,1}  0:[648.774719,1084.24707]    1:(1840.36108,1170.18738)
+(DISARMED because id1=0 stayed the same and is *not* the anchor.  I think bug isn't happening (or isn't happening any more))
+            0.412   72/114:                  {0,1}  0: 646.775452,1082.24841     1:[1840.36108,1170.18738]
+            0.412   73/114:                  {0,1}  0:[646.775452,1082.24841]    1:(1840.36108,1170.18738)
+---
+            0.153   26/65:                  {0}    0: 1017.64667,532.630127
+            0.157   27/65:           MOVE   {0}    0: 1013.64807,530.631531
+            0.153   28/65:  POINTER_DOWN(1) {0,1}  0:[1013.64807,530.631531]    1: 1525.47034,609.576660  @
+(ARMING: id0=1 id1=0 anchor0=1525.4703,609.57666)
+            0.161   29/65:                  {0,1}  0: 1009.64948,526.634277     1:[1525.47034,609.576660]
+            0.161   30/65:           MOVE   {0,1}  0:[1009.64948,526.634277] @  1:(1525.47034,609.576660)
+(ARMED: id0=1 id1=0 anchor0=1525.4703,609.57666 anchor1=1009.6495,526.6343 lastKnownGood0=1525.4703,609.57666 lastKnownGood1=1009.6495,526.6343)
+            0.170   31/65:                  {0,1}  0: 1000.65259,521.637756     1:[1525.47034,609.576660]
+            0.170   32/65:                  {0,1}  0:[1000.65259,521.637756]    1:(1525.47034,609.576660)
+(DISARMED because id1=0 stayed the same and is *not* the anchor.  I think bug isn't happening (or isn't happening any more))
+            0.178   33/65:                  {0,1}  0: 991.655701,515.641907     1:[1525.47034,609.576660]
+            0.178   34/65:           MOVE   {0,1}  0:[991.655701,515.641907]    1:(1525.47034,609.576660)
+---
+            0.063    9/33:                  {0}    0: 1269.55920,597.585022
+            0.073   10/33:           MOVE   {0}    0: 1263.56128,592.588501
+            0.073   11/33:  POINTER_DOWN(1) {0,1}  0:[1263.56128,592.588501]    1: 1953.32178,422.706451  @
+(ARMING: id0=1 id1=0 anchor0=1953.3218,422.70645)
+            0.082   12/33:                  {0,1}  0: 1256.56372,587.591919     1:[1953.32178,422.706451]
+            0.082   13/33:           MOVE   {0,1}  0:[1256.56372,587.591919] @  1:(1953.32178,422.706451)
+(ARMED: id0=1 id1=0 anchor0=1953.3218,422.70645 anchor1=1256.5637,587.5919 lastKnownGood0=1953.3218,422.70645 lastKnownGood1=1256.5637,587.5919)
+            0.090   14/33:           MOVE   {0,1}  0: 1247.56689,581.596130     1:[1953.32178,422.706451]
+            0.090   15/33:           MOVE   {0,1}  0:[1247.56689,581.596130]    1:(1953.32178,422.706451)
+(DISARMED because id1=0 stayed the same and is *not* the anchor.  I think bug isn't happening (or isn't happening any more))
+            0.098   16/33:                  {0,1}  0: 1236.57068,575.600281     1:[1953.32178,422.706451]
+---
+(initially-down wasn't moving)
+            4.462  245/408:                  {1}                                 1:[2483.13794,502.650940]
+            4.469  246/408:           MOVE   {1}                                 1:(2483.13794,502.650940)
+            4.488  247/408:  POINTER_DOWN(0) {0,1}  0: 1734.39783,336.766144  @  1:[2483.13794,502.650940]
+(ARMING: id0=0 id1=1 anchor0=1734.3978,336.76614)
+            4.488  248/408:           MOVE   {0,1}  0:[1734.39783,336.766144]    1:(2483.13794,502.650940) @
+(ARMED: id0=0 id1=1 anchor0=1734.3978,336.76614 anchor1=2483.138,502.65094 lastKnownGood0=1734.3978,336.76614 lastKnownGood1=2483.138,502.65094)
+            4.496  249/408:                  {0,1}  0:(1734.39783,336.766144)    1:[2483.13794,502.650940]
+            4.505  250/408:                  {0,1}  0:(1734.39783,336.766144)    1:[2483.13794,502.650940]
+            4.505  251/408:           MOVE   {0,1}  0:[1734.39783,336.766144]    1:(2483.13794,502.650940)
+            4.513  252/408:                  {0,1}  0:(1734.39783,336.766144)    1:[2483.13794,502.650940]
+            4.513  253/408:                  {0,1}  0:[1734.39783,336.766144]    1:[2483.13794,502.650940]
+            4.522  254/408:                  {0,1}  0:(1734.39783,336.766144)    1:[2483.13794,502.650940]
+            4.522  255/408:           MOVE   {0,1}  0:[1734.39783,336.766144]    1:(2483.13794,502.650940)
+            4.530  256/408:                  {0,1}  0:(1734.39783,336.766144)    1:[2483.13794,502.650940]
+            4.538  257/408:           MOVE   {0,1}  0:(1734.39783,336.766144)    1:[2483.13794,502.650940]
+            4.547  258/408:                  {0,1}  0: 1727.40027,332.768921     1:[2483.13794,502.650940]
+            4.547  259/408:           MOVE   {0,1}  0:[1727.40027,332.768921]    1:(2483.13794,502.650940)
+(DISARMED because id0=0 stayed the same and is *not* the anchor.  I think bug isn't happening (or isn't happening any more))
+            4.555  260/408:                  {0,1}  0: 1715.40442,326.773071     1:[2483.13794,502.650940]
+            4.556  261/408:           MOVE   {0,1}  0:[1715.40442,326.773071]    1:(2483.13794,502.650940)
+---
+(initially-down wasn't moving)
+            2.195  248/396:                  {1}                                 1:(2236.22363,1071.25610)
+            2.204  249/396:           MOVE   {1}                                 1:[2236.22363,1071.25610]
+            2.213  250/396:  POINTER_DOWN(0) {0,1}  0: 1343.53357,963.330994  @  1:[2236.22363,1071.25610]
+(ARMING: id0=0 id1=1 anchor0=1343.5336,963.331)
+            2.221  251/396:                  {0,1}  0:(1343.53357,963.330994)    1:[2236.22363,1071.25610]
+            2.221  252/396:           MOVE   {0,1}  0:[1343.53357,963.330994]    1:(2236.22363,1071.25610) @
+(ARMED: id0=0 id1=1 anchor0=1343.5336,963.331 anchor1=2236.2236,1071.2561 lastKnownGood0=1343.5336,963.331 lastKnownGood1=2236.2236,1071.2561)
+            2.230  253/396:           MOVE   {0,1}  0:(1343.53357,963.330994)    1:[2236.22363,1071.25610]
+            2.230  254/396:           MOVE   {0,1}  0:[1343.53357,963.330994]    1:(2236.22363,1071.25610)
+            2.238  255/396:                  {0,1}  0:(1343.53357,963.330994)    1:[2236.22363,1071.25610]
+            2.238  256/396:           MOVE   {0,1}  0:[1343.53357,963.330994]    1:[2236.22363,1071.25610]
+            2.247  257/396:                  {0,1}  0:(1343.53357,963.330994)    1:[2236.22363,1071.25610]
+            2.247  258/396:                  {0,1}  0:[1343.53357,963.330994]    1:(2236.22363,1071.25610)
+            2.255  259/396:                  {0,1}  0:(1343.53357,963.330994)    1:[2236.22363,1071.25610]
+            2.255  260/396:           MOVE   {0,1}  0:[1343.53357,963.330994]    1:(2236.22363,1071.25610)
+            2.264  261/396:                  {0,1}  0:(1343.53357,963.330994)    1:[2236.22363,1071.25610]
+            2.272  262/396:                  {0,1}  0: 1339.53491,960.333069     1:[2236.22363,1071.25610]
+            2.272  263/396:           MOVE   {0,1}  0:[1339.53491,960.333069]    1:(2236.22363,1071.25610)
+(DISARMED because id0=0 stayed the same and is *not* the anchor.  I think bug isn't happening (or isn't happening any more))
+            2.281  264/396:           MOVE   {0,1}  0: 1330.53809,955.336548     1:[2236.22363,1071.25610]
+*/
+
+
+  private static class FixerState {
+    private final static int STATE_DISARMED = 0;
+    private final static int STATE_ARMING = 1;
+    private final static int STATE_ARMED = 2;
+    private final static String stateToString(int state) {
+      if (state == STATE_DISARMED) return "DISARMED";
+      if (state == STATE_ARMING) return "ARMING";
+      if (state == STATE_ARMED) return "ARMED";
+      CHECK(false);
+      return null;
+    }
+  }
+
+  // (XXX Older more naive version...)
   // So the states are:
-  private final int STATE_DISARMED = 0;
-  private final int STATE_ARMING = 1;
-  private final int STATE_ARMED = 2;
-  private final String stateToString(int state) {
+  private final static int STATE_DISARMED = 0;
+  private final static int STATE_ARMING = 1;
+  private final static int STATE_ARMED = 2;
+  private final static String stateToString(int state) {
     if (state == STATE_DISARMED) return "DISARMED";
     if (state == STATE_ARMING) return "ARMING";
     if (state == STATE_ARMED) return "ARMED";
     CHECK(false);
     return null;
   }
-
   // CBB: move this into a "State" sub-object?  Not sure
   private int mCurrentState = STATE_DISARMED;
   private int mId0 = -1;  // gets set to the going-down pointer when arming (first event seen)
@@ -1147,7 +1339,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             //    CBB: I'm not sure how to completely characterize this situation,
             //    but I'll err on the side of assuming it's still bugging (when really not bugging,
             //    we'll get evidence of not bugging soon enough anyway).
-            if (action != ACTION_MOVE) {
+            if (action != ACTION_UP && action != ACTION_MOVE) {
               if (annotationOrNull != null) annotationOrNull.append("(NOT DISARMING on rogue stay-the-same of id0="+mId0+" on action="+actionToString(action)+"("+unfixed.getPointerId(actionIndex)+") (id1="+mId1+")");
               // CBB: seems like we're saying this a lot-- maybe could think about it differently; instead of last-known-good, it's just the last value seen that wasn't corrected... or, simply the last value output in the fixed event
               mLastKnownGood0x = pointerCoords[index0].x;
@@ -1182,7 +1374,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
               // staying the same always gets botched into moving to the anchor).
               if (verboseLevel >= 1) Log.i(TAG, "          pointer mId1="+mId1+" stayed the same at "+mLastKnownGood1x+","+mLastKnownGood1y+", and is *not* anchor. bug isn't happening (or isn't happening any more).");
               // Check for exceptional case; see explanation above in the reverse situation
-              if (action != ACTION_MOVE) {
+              if (action != ACTION_UP && action != ACTION_MOVE) {
                 if (annotationOrNull != null) annotationOrNull.append("(NOT DISARMING on rogue stay-the-same of id1="+mId1+" on action="+actionToString(action)+"("+unfixed.getPointerId(actionIndex)+") (id0="+mId0+")");
                 mLastKnownGood1x = pointerCoords[index1].x;
                 mLastKnownGood1y = pointerCoords[index1].y;
