@@ -219,13 +219,13 @@ public class FixedOnTouchListener implements View.OnTouchListener {
   }
 
   private PrintWriter mTracePrintWriterOrNull = null;
-  private ArrayList<StringBuilder> mAnnotationsOrNull = null;
-  private ArrayList<StringBuilder> mFixedAnnotationsOrNull = null;
+  private ArrayList<CharSequence> mAnnotationsOrNull = null;
+  private ArrayList<CharSequence> mFixedAnnotationsOrNull = null;
   private ArrayList<LogicalMotionEvent> mLogicalMotionEventsSinceFirstDown = null;
   private ArrayList<LogicalMotionEvent> mFixedLogicalMotionEventsSinceFirstDown = null;
   public void setTracePrintWriter(PrintWriter tracePrintWriter) {
     this.mTracePrintWriterOrNull = tracePrintWriter;
-    this.mAnnotationsOrNull = tracePrintWriter!=null ? new ArrayList<StringBuilder>() : null;
+    this.mAnnotationsOrNull = tracePrintWriter!=null ? new ArrayList<CharSequence>() : null;
     this.mLogicalMotionEventsSinceFirstDown = tracePrintWriter!=null ? new ArrayList<LogicalMotionEvent>() : null;
     this.mFixedLogicalMotionEventsSinceFirstDown = tracePrintWriter!=null ? new ArrayList<LogicalMotionEvent>() : null;
   }
@@ -423,7 +423,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     public static String dumpString(ArrayList<LogicalMotionEvent> list,
                                     String punctuationWhereDifferentFromOther,
                                     ArrayList<LogicalMotionEvent> other,
-                                    ArrayList<StringBuilder> annotationsOrNull) {
+                                    ArrayList<CharSequence> annotationsOrNull) {
       final int verboseLevel = 0;  // 0: nothing, 1: in/out, 2: some gory details
       if (verboseLevel >= 1) Log.i(TAG, "in LogicalMotionEvent.dumpString("+list.size()+" logical events)");
       StringBuilder answer = new StringBuilder();
@@ -575,21 +575,21 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           }
         }
 
-        StringBuilder sb = new StringBuilder();
+        StringBuilder lineBuilder = new StringBuilder();
         long relativeTimeMillis = e.eventTimeMillis - refTimeMillis;
         if (e.isHistorical) CHECK_EQ(e.action, MotionEvent.ACTION_MOVE);
         if (e.action==MotionEvent.ACTION_MOVE) CHECK_EQ(e.actionId, e.ids[0]);
-        sb.append(String.format("          %3d.%03d %4d/%d: %16s %-"+idsWidth+"s",
-                                relativeTimeMillis/1000,
-                                relativeTimeMillis%1000,
-                                i, n,
-                                (e.action==MotionEvent.ACTION_MOVE && e.isHistorical ? "" :
-                                (actionToString(e.action)+(e.action==MotionEvent.ACTION_MOVE?"  ":"("+e.actionId+")"))),
-                                STRINGIFY_COMPACT(e.ids)));
+        lineBuilder.append(String.format("          %3d.%03d %4d/%d: %16s %-"+idsWidth+"s",
+                                         relativeTimeMillis/1000,
+                                         relativeTimeMillis%1000,
+                                         i, n,
+                                         (e.action==MotionEvent.ACTION_MOVE && e.isHistorical ? "" :
+                                         (actionToString(e.action)+(e.action==MotionEvent.ACTION_MOVE?"  ":"("+e.actionId+")"))),
+                                         STRINGIFY_COMPACT(e.ids)));
         for (int id = 0; id < e.all_axis_values.length; ++id) {
           if (e.all_axis_values[id] == null) {
-            sb.append(String.format("%29s", ""));
-            //sb.append(String.format("%52s", "", ""));
+            lineBuilder.append(String.format("%29s", ""));
+            //lineBuilder.append(String.format("%52s", "", ""));
           } else {
             String coordsString = String.format("%.9g,%.9g", e.x(id), e.y(id));
             //String coordsString = String.format("%.9g,%.9g,%.9g,%.9g", e.x(id), e.y(id), e.pressure(id), e.size(id));  // pressure&size turned out to be not indicators
@@ -634,12 +634,20 @@ public class FixedOnTouchListener implements View.OnTouchListener {
               coordsString += punc;
             }
 
-            sb.append(coordsString);
+            lineBuilder.append(coordsString);
           }
         }
-        answer.append(sb);
+        answer.append(lineBuilder);
         answer.append("\n");
-      }
+        if (annotationsOrNull != null) {
+          CHECK_EQ(annotationsOrNull.size(), n);
+          CharSequence annotationLine = annotationsOrNull.get(i);
+          if (annotationLine != null && annotationLine.length() > 0) {
+            answer.append(annotationLine);
+            answer.append("\n");
+          }
+        }
+      }  // for i < n
       if (verboseLevel >= 1) Log.i(TAG, "out LogicalMotionEvent.dumpString("+list.size()+" logical events)");
       return answer.toString();
     }  // dump
@@ -1014,11 +1022,14 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       int historyIndex,
       long eventTime,
       MotionEvent.PointerCoords pointerCoords[],
-      ArrayList<StringBuilder> annotationsOrNull  // if not null, we append one item.
+      ArrayList<CharSequence> annotationsOrNull  // if not null, we append one item.
       ) {
     final int verboseLevel = 0;
     if (verboseLevel >= 1) Log.i(TAG, "        in correctPointerCoordsUsingState(historyIndex="+historyIndex+"/"+unfixed.getHistorySize()+", eventTime="+(eventTime-unfixed.getDownTime())/1000.+")  before: "+stateToString(mCurrentState));
     if (verboseLevel >= 1) Log.i(TAG, "          before: id0="+mId0+" id1="+mId1+" anchor0="+mAnchor0x+","+mAnchor0y+" anchor1="+mAnchor1x+","+mAnchor1y+" lkg0="+mLastKnownGood0x+","+mLastKnownGood0y+" lkg1="+mLastKnownGood1x+","+mLastKnownGood1y+"");
+
+    StringBuilder annotationOrNull = annotationsOrNull!=null ? new StringBuilder() : null; // CBB: maybe wasteful since most lines don't get annotated
+
     final int action = unfixed.getActionMasked();
     final int actionIndex = unfixed.getActionIndex();
     final int pointerCount = unfixed.getPointerCount();
@@ -1108,6 +1119,10 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       }
     }  // STATE_ARMED
 
+    if (annotationsOrNull != null) {
+      annotationsOrNull.add(annotationOrNull);
+    }
+
     if (verboseLevel >= 1) Log.i(TAG, "          after: id0="+mId0+" id1="+mId1+" anchor0="+mAnchor0x+","+mAnchor0y+" anchor1="+mAnchor1x+","+mAnchor1y+" lkg0="+mLastKnownGood0x+","+mLastKnownGood0y+" lkg1="+mLastKnownGood1x+","+mLastKnownGood1y+"");
     if (verboseLevel >= 1) Log.i(TAG, "        out correctPointerCoordsUsingState(historyIndex="+historyIndex+"/"+unfixed.getHistorySize()+", eventTime="+(eventTime-unfixed.getDownTime())/1000.+")  after: "+stateToString(mCurrentState));
   }  // correctPointerCoordsUsingState
@@ -1146,7 +1161,14 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             }
           }
           long subEventTime = h==historySize ? unfixed.getEventTime() : unfixed.getHistoricalEventTime(h);
+          if (mAnnotationsOrNull != null) {
+            CHECK_EQ(mAnnotationsOrNull.size(), mFixedLogicalMotionEventsSinceFirstDown.size() + h);
+          }
           correctPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords, mAnnotationsOrNull);
+          if (mAnnotationsOrNull != null) {
+            // It must have appended one annotation (possibly null)
+            CHECK_EQ(mAnnotationsOrNull.size(), mFixedLogicalMotionEventsSinceFirstDown.size() + h + 1);
+          }
           int historicalMetaState = unfixed.getMetaState(); // huh? this can't be right, but I don't see any way to query metaState per-history
           if (h == 0) {
             fixed = MotionEvent.obtain(
@@ -1229,10 +1251,14 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           mTracePrintWriterOrNull.println("      ===============================================================");
           mTracePrintWriterOrNull.flush();
         }
+        if (mAnnotationsOrNull != null) {
+          mAnnotationsOrNull.clear();
+        }
       }
 
       mLogicalMotionEventsSinceFirstDown.clear();
       mFixedLogicalMotionEventsSinceFirstDown.clear();
+
     }
 
     if (verboseLevel >= 2) Log.i(TAG, "    out FixedOnTouchListener onTouch, returning "+answer);

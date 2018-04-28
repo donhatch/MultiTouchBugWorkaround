@@ -67,6 +67,7 @@ public class MultiTouchBugWorkaroundActivity extends AppCompatActivity {
   public void onConfigurationChanged(Configuration newConfig) {
     // This will get called on, e.g., orientation change,
     // if the manifest specifies that we handle config changes
+    super.onConfigurationChanged(newConfig);
     makeFullScreen();
   }
 
@@ -74,7 +75,7 @@ public class MultiTouchBugWorkaroundActivity extends AppCompatActivity {
   public void onWindowFocusChanged(boolean hasFocus) {
     int verboseLevel = 1;
     if (verboseLevel >= 1) Log.i(TAG, "            in onWindowFocusChanged");
-
+    super.onWindowFocusChanged(hasFocus);
     if (true || hasFocus) {
       makeFullScreen();
     }
