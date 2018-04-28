@@ -50,7 +50,11 @@ public class PaintView extends FrameLayout {
   private static final String TAG = MultiTouchBugWorkaroundActivity.class.getSimpleName();
 
   public static final int MAX_FINGERS = 10;
+  public static final float STROKE_WIDTH = 10.0f;
+  public static final float SHADOW_RADIUS = 5.f;
+
   private Paint[] mFingerPaints = new Paint[MAX_FINGERS];;
+  private Paint mShadowPaint;
   private RectF mPathBoundsScratch = new RectF();
   private boolean mShowUnfixed = true;
 
@@ -82,9 +86,9 @@ public class PaintView extends FrameLayout {
         // CBB: could actually use clipBounds: cull away paths that don't intersect it
         super.onDraw(canvas);
         if (mShowUnfixed) {
-          drawStuff(canvas, unfixedStuff);
+          drawStuff(canvas, unfixedStuff, mShadowPaint);
         } else {
-          drawStuff(canvas, fixedStuff);
+          drawStuff(canvas, fixedStuff, mShadowPaint);
         }
         if (verboseLevel >= 1) Log.i(TAG, "            out mTheTouchableDrawable onDraw clipBounds="+clipBounds);
       }
@@ -178,16 +182,31 @@ public class PaintView extends FrameLayout {
       mFingerPaints[i].setAntiAlias(true);
       mFingerPaints[i].setColor(colors[i]);
       mFingerPaints[i].setStyle(Paint.Style.STROKE);
-      mFingerPaints[i].setStrokeWidth(6);
+      mFingerPaints[i].setStrokeWidth(STROKE_WIDTH);
       mFingerPaints[i].setStrokeCap(Paint.Cap.BUTT);
+
+      // Hmm, setShadowLayer seems to be hard-to-control and/or buggy:
+      // - can't seem to get it to be opaque-ish for any significant distance
+      // - with hw accel on, its color seems to be ignored; it uses the stroke color
+      //mFingerPaints[i].setShadowLayer(SHADOW_RADIUS, /*dx=*/0.f, /*dy=*/0.f, 0xfe8080ff);
+      // So instead, we just draw a shadow explicitly on every draw of the path.
     }
+
+    mShadowPaint = new Paint() {{
+      setAntiAlias(true);
+      setColor(0xffc0c0c0);  // CBB: same as background, should get from a common source
+      setStyle(Paint.Style.STROKE);
+      setStrokeWidth(STROKE_WIDTH + 2.0f*SHADOW_RADIUS);
+      setStrokeCap(Paint.Cap.BUTT);
+    }};
 
     Log.i(TAG, "    out PaintView ctor");
   }
 
-  private static void drawStuff(Canvas canvas, Stuff stuff) {
+  private static void drawStuff(Canvas canvas, Stuff stuff, Paint shadowPaint) {
     CHECK_EQ(stuff.mPaths.size(), stuff.mCompletedPaints.size());
     for (int i = 0; i < stuff.mPaths.size(); ++i) {
+      canvas.drawPath(stuff.mPaths.get(i), shadowPaint);
       canvas.drawPath(stuff.mPaths.get(i), stuff.mCompletedPaints.get(i));
     }
   }
@@ -237,7 +256,7 @@ public class PaintView extends FrameLayout {
               if (verboseLevel >= 1) Log.i(TAG, "                  adding to path "+id+": lineTo "+x+", "+y+"  (h="+h+"/"+historySize+")");
               stuff.mFingerPaths[id].lineTo(x, y);
               if (thisStuffIsVisible) {
-                if (true) {
+                if (false) {
                   // Overkill
                   stuff.mFingerPaths[id].computeBounds(mPathBoundsScratch, true);
                   mTheTouchableDrawable.invalidate((int) mPathBoundsScratch.left, (int) mPathBoundsScratch.top,
@@ -246,11 +265,12 @@ public class PaintView extends FrameLayout {
                   // NOTE: if hw accel is on (which it is by default),
                   // then onDraw() never sees these reduced clip bounds.
                   // (We *do* still need to invalidate, but the region we give it is ignored)
-                  final int fudge = 2;  // theoretically should be half-line-width, I think, but 2 seems necessary
-                  int x0 = (int)Math.min(stuff.prevX[id], x)-fudge;
-                  int y0 = (int)Math.min(stuff.prevY[id], y)-fudge;
-                  int x1 = (int)Math.max(stuff.prevX[id], x)+fudge;
-                  int y1 = (int)Math.max(stuff.prevY[id], y)+fudge;
+                  //final int pad = (int)Math.ceil(STROKE_WIDTH/4.);  // too small, as expected (only observable with hw accel false)
+                  final int pad = (int)Math.ceil(STROKE_WIDTH/2. + SHADOW_RADIUS);
+                  int x0 = (int)Math.min(stuff.prevX[id], x)-pad;
+                  int y0 = (int)Math.min(stuff.prevY[id], y)-pad;
+                  int x1 = (int)Math.max(stuff.prevX[id], x)+pad;
+                  int y1 = (int)Math.max(stuff.prevY[id], y)+pad;
                   if (verboseLevel >= 1) Log.i(TAG, "invalidating "+x0+","+y0+" .. "+x1+","+y1+"");
                   mTheTouchableDrawable.invalidate(x0,y0,x1,y1);
                 }
