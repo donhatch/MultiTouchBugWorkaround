@@ -17,6 +17,10 @@
 //          - 0 up
 //          - with 1 moving: 0&2 down simultanously and move.
 //              - id0=0 id1=1
+//		  - in this case (at least sometimes),  it got wrongly disarmed because id 2 came down
+//		    a bit later, causing id1 to do a stay-same-that's-not-anchor even though it *is* bugging.
+//		    BAD05.
+//		    IDEA: Note that the exceptional thing is during the POINTER_DOWN(2) event-- maybe can ignore that in the disarm test?
 //              - or all three.  omg.  BAD04
 //          - if it doesn't work, 0&2 up and repeat previous step.
 //      2.
@@ -27,6 +31,11 @@
 //          - with 2 moving: 0&1 down simultaneously and move.
 //              - id0=0 id1=2
 //              - or all three!!! omg.   BAD03.
+//		- or, it was correctly doing id0=0 id1=2,
+//			but then at the end id 1 came up before id 0,
+//			causing a 0-to-self causing disarming,
+//			even though 0 is still bugging for another move and pointer up (and maybe more, if had left that pointer down.
+//			BAD06
 //          - if it doesn't work, 0&1 up and repeat previous step.
 //
 // BUG: apparently the following gets snargled up:  the condition isn't quite right when there are two POINTER_DOWNs at the same time.
