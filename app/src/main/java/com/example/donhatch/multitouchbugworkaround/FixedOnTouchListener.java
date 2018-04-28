@@ -219,13 +219,13 @@ public class FixedOnTouchListener implements View.OnTouchListener {
   }
 
   private PrintWriter mTracePrintWriterOrNull = null;
-  private ArrayList<CharSequence> mAnnotationsOrNull = null;
-  private ArrayList<CharSequence> mFixedAnnotationsOrNull = null;
+  private ArrayList<String> mAnnotationsOrNull = null;
+  private ArrayList<String> mFixedAnnotationsOrNull = null;
   private ArrayList<LogicalMotionEvent> mLogicalMotionEventsSinceFirstDown = null;
   private ArrayList<LogicalMotionEvent> mFixedLogicalMotionEventsSinceFirstDown = null;
   public void setTracePrintWriter(PrintWriter tracePrintWriter) {
     this.mTracePrintWriterOrNull = tracePrintWriter;
-    this.mAnnotationsOrNull = tracePrintWriter!=null ? new ArrayList<CharSequence>() : null;
+    this.mAnnotationsOrNull = tracePrintWriter!=null ? new ArrayList<String>() : null;
     this.mLogicalMotionEventsSinceFirstDown = tracePrintWriter!=null ? new ArrayList<LogicalMotionEvent>() : null;
     this.mFixedLogicalMotionEventsSinceFirstDown = tracePrintWriter!=null ? new ArrayList<LogicalMotionEvent>() : null;
   }
@@ -423,7 +423,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     public static String dumpString(ArrayList<LogicalMotionEvent> list,
                                     String punctuationWhereDifferentFromOther,
                                     ArrayList<LogicalMotionEvent> other,
-                                    ArrayList<CharSequence> annotationsOrNull) {
+                                    ArrayList<String> annotationsOrNull) {
       final int verboseLevel = 0;  // 0: nothing, 1: in/out, 2: some gory details
       if (verboseLevel >= 1) Log.i(TAG, "in LogicalMotionEvent.dumpString("+list.size()+" logical events)");
       StringBuilder answer = new StringBuilder();
@@ -537,8 +537,10 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       final float[] mostRecentNonSuspiciousY = new float[max_id_occurring+1];
 
       long refTimeMillis = list.get(0).eventTimeMillis;
+      if (annotationsOrNull != null) CHECK_EQ(annotationsOrNull.size(), n);
       for (int i = 0; i < n;  ++i) {
         LogicalMotionEvent e = list.get(i);
+        String annotationLine = annotationsOrNull!=null ? annotationsOrNull.get(i) : null;
 
         boolean justNowGotCoordsOfInterestForId0 = false;
         boolean justNowGotCoordsOfInterestForIdNonzero = false;
@@ -622,16 +624,44 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             }
 
             if (true) {
-              String punc = " ";
+              String punc = "";
               if (other != null) {
                 LogicalMotionEvent eOther = other.get(i);
                 CHECK_EQ(eOther.all_axis_values.length, e.all_axis_values.length);
                 if (e.x(id) != eOther.x(id)
                  || e.y(id) != eOther.y(id)) {
-                  punc = punctuationWhereDifferentFromOther;
+                  punc += punctuationWhereDifferentFromOther;
                 }
               }
-              coordsString += punc;
+
+
+              // Sad way of locating the anchors.
+              // Note that we only get this information if we have annotations,
+              // whereas it would be nice to get it even in the other two cases.
+              if (annotationLine != null) {
+                if (annotationLine.startsWith("(ARMING:")) {
+                  int id0start = annotationLine.indexOf("id0=");
+                  CHECK_NE(id0start, -1);
+                  id0start += 4;
+                  final int id0end = annotationLine.indexOf(" ", id0start);
+                  CHECK_NE(id0end, -1);
+                  final int id0 = Integer.parseInt(annotationLine.substring(id0start, id0end));
+                  if (id0 == id) {
+                    punc += "@";
+                  }
+                } else if (annotationLine.startsWith("(ARMED:")) {
+                  int id1start = annotationLine.indexOf("id1=");
+                  CHECK_NE(id1start, -1);
+                  id1start += 4;
+                  final int id1end = annotationLine.indexOf(" ", id1start);
+                  CHECK_NE(id1end, -1);
+                  final int id1 = Integer.parseInt(annotationLine.substring(id1start, id1end));
+                  if (id1 == id) {
+                    punc += "@";
+                  }
+                }
+              }
+              coordsString += (punc.length()==0 ? " " : punc);
             }
 
             lineBuilder.append(coordsString);
@@ -639,13 +669,9 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         }
         answer.append(lineBuilder);
         answer.append("\n");
-        if (annotationsOrNull != null) {
-          CHECK_EQ(annotationsOrNull.size(), n);
-          CharSequence annotationLine = annotationsOrNull.get(i);
-          if (annotationLine != null && annotationLine.length() > 0) {
-            answer.append(annotationLine);
-            answer.append("\n");
-          }
+        if (annotationLine != null && annotationLine.length() > 0) {
+          answer.append(annotationLine);
+          answer.append("\n");
         }
       }  // for i < n
       if (verboseLevel >= 1) Log.i(TAG, "out LogicalMotionEvent.dumpString("+list.size()+" logical events)");
@@ -1022,7 +1048,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       int historyIndex,
       long eventTime,
       MotionEvent.PointerCoords pointerCoords[],
-      ArrayList<CharSequence> annotationsOrNull  // if not null, we append one item.
+      ArrayList<String> annotationsOrNull  // if not null, we append one item.
       ) {
     final int verboseLevel = 0;
     if (verboseLevel >= 1) Log.i(TAG, "        in correctPointerCoordsUsingState(historyIndex="+historyIndex+"/"+unfixed.getHistorySize()+", eventTime="+(eventTime-unfixed.getDownTime())/1000.+")  before: "+stateToString(mCurrentState));
@@ -1066,8 +1092,8 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         }
       } else {
         // Didn't see the second event of the arming sequence; disarm.
-        moveToSTATE_DISARMED();
         if (annotationOrNull != null) annotationOrNull.append("(DISARMED because didn't see second event of arming sequence)");
+        moveToSTATE_DISARMED();
       }
     } else if (mCurrentState == STATE_ARMED) {  // i.e. if was already armed (not just now got armed)
       final int index0 = unfixed.findPointerIndex(mId0);
@@ -1087,8 +1113,8 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             // The bug is not happening (since, when the bug is happening,
             // staying the same always gets botched into moving to the anchor).
             if (verboseLevel >= 1) Log.i(TAG, "          pointer 0 stayed the same at "+mLastKnownGood0x+","+mLastKnownGood0y+", and is *not* anchor. bug isn't happening (or isn't happening any more).");
-            moveToSTATE_DISARMED();
             if (annotationOrNull != null) annotationOrNull.append("(DISARMED because id0="+mId0+" stayed the same and is *not* the anchor)");
+            moveToSTATE_DISARMED();
           } else {
             mLastKnownGood0x = pointerCoords[index0].x;
             mLastKnownGood0y = pointerCoords[index0].y;
@@ -1113,8 +1139,8 @@ public class FixedOnTouchListener implements View.OnTouchListener {
               // The bug is not happening (since, when the bug is happening,
               // staying the same always gets botched into moving to the anchor).
               if (verboseLevel >= 1) Log.i(TAG, "          pointer mId1="+mId1+" stayed the same at "+mLastKnownGood1x+","+mLastKnownGood1y+", and is *not* anchor. bug isn't happening (or isn't happening any more).");
+              if (annotationOrNull != null) annotationOrNull.append("(DISARMED because id1="+mId1+" stayed the same and is *not* the anchor)");
               moveToSTATE_DISARMED();
-              if (annotationOrNull != null) annotationOrNull.append("(DISARMED because id0="+mId1+" stayed the same and is *not* the anchor)");
             } else {
               mLastKnownGood1x = pointerCoords[index1].x;
               mLastKnownGood1y = pointerCoords[index1].y;
@@ -1125,7 +1151,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     }  // STATE_ARMED
 
     if (annotationsOrNull != null) {
-      annotationsOrNull.add(annotationOrNull);
+      annotationsOrNull.add(annotationOrNull.toString());
     }
 
     if (verboseLevel >= 1) Log.i(TAG, "          after: id0="+mId0+" id1="+mId1+" anchor0="+mAnchor0x+","+mAnchor0y+" anchor1="+mAnchor1x+","+mAnchor1y+" lkg0="+mLastKnownGood0x+","+mLastKnownGood0y+" lkg1="+mLastKnownGood1x+","+mLastKnownGood1y+"");
