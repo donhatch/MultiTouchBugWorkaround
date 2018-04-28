@@ -16,12 +16,16 @@
 //          - 1 down
 //          - 0 up
 //          - with 1 moving: 0&2 down simultanously and move.
+//              - id0=0 id1=1
 //          - if it doesn't work, 0&2 up and repeat previous step.
 //      2.
 //          - 0 down
 //          - 1 down
 //          - 2 down
+//          - 0&1 up
 //          - with 2 moving: 0&1 down simultaneously and move.
+//              - id0=0 id1=2
+//              - or all three!!! omg.   BAD03.
 //          - if it doesn't work, 0&1 up and repeat previous step.
 //
 // BUG: apparently the following gets snargled up:  the condition isn't quite right when there are two POINTER_DOWNs at the same time.
