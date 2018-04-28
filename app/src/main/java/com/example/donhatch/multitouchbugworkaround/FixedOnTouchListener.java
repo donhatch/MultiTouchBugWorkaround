@@ -976,6 +976,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     return null;
   }
 
+  // CBB: move this into a "State" sub-object?  Not sure
   private int mCurrentState = STATE_DISARMED;
   private int mId0 = -1;  // gets set to the going-down pointer when arming (first event seen)
   private int mId1 = -1;  // gets set to the already-down pointer when arming (first event seen)
@@ -990,6 +991,9 @@ public class FixedOnTouchListener implements View.OnTouchListener {
 
   private void moveToSTATE_DISARMED() {
     mCurrentState = STATE_DISARMED;
+    // We can get here from any state,
+    // so make no assumptions nor assertions
+    // about what the state values look like beforehand.
     mId0 = -1;
     mId1 = -1;
     mAnchor0x = Float.NaN;
@@ -1003,6 +1007,9 @@ public class FixedOnTouchListener implements View.OnTouchListener {
   }
   private void moveToSTATE_ARMING(int id0, int id1, float anchor0x, float anchor0y) {
     mCurrentState = STATE_ARMING;
+    // We can get here from any state,
+    // so make no assumptions nor assertions
+    // about what the state values look like beforehand.
     mId0 = id0;
     mId1 = id1;
     mAnchor0x = anchor0x;
@@ -1015,11 +1022,22 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     mLastKnownGood1y = Float.NaN;
   }
   private void moveToSTATE_ARMED(float anchor1x, float anchor1y, float lastKnownGood0x, float lastKnownGood0y, float lastKnownGood1x, float lastKnownGood1y) {
+    CHECK_EQ(mCurrentState, STATE_ARMING);
     mCurrentState = STATE_ARMED;
+    // Since we can get here from only STATE_ARMING,
+    // we can assert which state values have been set.
+    // These have already been set...
     CHECK_GE(mId0, 0);
     CHECK_GE(mId1, 0);
     CHECK(!Float.isNaN(mAnchor0x));
     CHECK(!Float.isNaN(mAnchor0y));
+    // And we're about to set these...
+    CHECK(Float.isNaN(mAnchor1x));
+    CHECK(Float.isNaN(mAnchor1y));
+    CHECK(Float.isNaN(mLastKnownGood0x));
+    CHECK(Float.isNaN(mLastKnownGood0y));
+    CHECK(Float.isNaN(mLastKnownGood1x));
+    CHECK(Float.isNaN(mLastKnownGood1y));
     mAnchor1x = anchor1x;
     mAnchor1y = anchor1y;
     mLastKnownGood0x = lastKnownGood0x;
