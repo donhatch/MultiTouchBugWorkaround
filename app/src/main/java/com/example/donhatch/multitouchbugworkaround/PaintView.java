@@ -26,6 +26,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Point;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.util.AttributeSet;
 import android.util.Log;
@@ -35,6 +36,7 @@ import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.LinearLayout;
+import android.widget.FrameLayout;
 import java.io.FileNotFoundException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -43,7 +45,7 @@ import static com.example.donhatch.multitouchbugworkaround.CHECK.*;
 import static com.example.donhatch.multitouchbugworkaround.STRINGIFY.STRINGIFY;
 
 // https://gist.github.com/ErikHellman/6069322
-public class PaintView extends LinearLayout {  // CBB: I wanted android.support.constraint.ConstraintLayout but not sure how to add it to project
+public class PaintView extends FrameLayout {
 
   private static final String TAG = MultiTouchBugWorkaroundActivity.class.getSimpleName();
 
@@ -51,6 +53,8 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
   private Paint[] mFingerPaints = new Paint[MAX_FINGERS];;
   private RectF mPathBounds = new RectF();
   private boolean mShowUnfixed = true;
+
+  private View mTheTouchableDrawable;
 
   private static class Stuff {
     private Path[] mFingerPaths = new Path[MAX_FINGERS];
@@ -68,9 +72,59 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
     super(context);
     Log.i(TAG, "    in PaintView ctor");
 
-    setOnTouchListener(new FixedOnTouchListener(new View.OnTouchListener() {
+    mTheTouchableDrawable = new android.view.View(context) {
+      @Override
+      protected void onDraw(Canvas canvas) {
+        final int verboseLevel = 0;
+        if (verboseLevel >= 1) {
+          Rect clip = new Rect();
+          canvas.getClipBounds(clip);
+          if (verboseLevel >= 1) Log.i(TAG, "            in mTheTouchableDrawable onDraw clip="+clip);
+        }
+        super.onDraw(canvas);
+        if (mShowUnfixed) {
+          drawStuff(canvas, unfixedStuff);
+        } else {
+          drawStuff(canvas, fixedStuff);
+        }
+        if (verboseLevel >= 1) Log.i(TAG, "            out mTheTouchableDrawable onDraw");
+      }
+    };
+    addView(mTheTouchableDrawable, new LayoutParams(LayoutParams.MATCH_PARENT,LayoutParams.MATCH_PARENT));
+
+    if (true) {
+      addView(new LinearLayout(context) {{
+        addView(new Button(context) {{
+          setText("Clear");
+          setOnClickListener(new Button.OnClickListener() {
+            @Override
+            public void onClick(View button) {
+              unfixedStuff.mPaths.clear();
+              fixedStuff.mPaths.clear();
+              unfixedStuff.mCompletedPaints.clear();
+              fixedStuff.mCompletedPaints.clear();
+              mTheTouchableDrawable.invalidate();
+            }
+          });
+        }});
+        addView(new CheckBox(context) {{
+          setText("Fix");
+          setOnCheckedChangeListener(new CheckBox.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+              mShowUnfixed = !isChecked;
+              mTheTouchableDrawable.invalidate();
+            }
+          });
+        }});
+      }});
+    }
+
+
+    mTheTouchableDrawable.setOnTouchListener(new FixedOnTouchListener(new View.OnTouchListener() {
       @Override
       public boolean onTouch(View view, MotionEvent fixedEvent) {
+        // This is our wrapped listener, after the fixer has done its fixing.
         // Record the fixed event.
         applyEventToStuff(fixedEvent, fixedStuff, /*thisStuffIsVisible=*/mShowUnfixed);
         return true;
@@ -78,22 +132,17 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
     }) {
       @Override
       public boolean onTouch(View view, MotionEvent unfixedEvent) {
-        // We first get the event, with the bug, here.
-        // Record it...
+        // This is our interception of the event before the fixer sees it.
+        // Record the unfixed event.
         applyEventToStuff(unfixedEvent, unfixedStuff, /*thisStuffIsVisible=*/!mShowUnfixed);
         // Then pass it through to the FixedOnTouchListener,
         // which creates a fixed event which is passed
-        // to our OnTouchListener's onTouch() above.
+        // to our wrapped OnTouchListener's onTouch() above.
         return super.onTouch(view, unfixedEvent);
       }
 
       {
-        // This is nuts.
-        //   adb -d shell 'run-as com.example.donhatch.multitouchbugworkaround cat /data/data/com.example.donhatch.multitouchbugworkaround/files/FixedOnTouchListener.trace.txt'
-        // oh wait, this says that risks corruption:
-        //  https://stackoverflow.com/questions/15558353/how-can-one-pull-the-private-data-of-ones-own-android-app/15559278#answer-31504263
-        // So try this instead:
-        //   adb -d shell 'run-as com.example.donhatch.multitouchbugworkaround cp /data/data/com.example.donhatch.multitouchbugworkaround/files/FixedOnTouchListener.trace.txt /mnt/sdcard/FixedOnTouchListener.trace.txt' && adb pull /mnt/sdcard/FixedOnTouchListener.trace.txt
+        // See top of MultiTouchBugWorkaroundActivity.java for recipe on how to get this back out
         Log.i(TAG, "      YOU ARE HERE==============================================================================================================================================================================================================================================================================================================================================");
         String traceFileName = "FixedOnTouchListener.trace.txt";
         String traceFilePathNameIThink = context.getFilesDir().getAbsolutePath()+"/"+traceFileName;
@@ -111,29 +160,6 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
       }
     });
 
-    addView(new Button(context) {{
-      setText("Clear");
-      setOnClickListener(new Button.OnClickListener() {
-        @Override
-        public void onClick(View button) {
-          unfixedStuff.mPaths.clear();
-          fixedStuff.mPaths.clear();
-          unfixedStuff.mCompletedPaints.clear();
-          fixedStuff.mCompletedPaints.clear();
-          PaintView.this.invalidate();
-        }
-      });
-    }});
-    addView(new CheckBox(context) {{
-      setText("Fix");
-      setOnCheckedChangeListener(new CheckBox.OnCheckedChangeListener() {
-        @Override
-        public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-          mShowUnfixed = !isChecked;
-          PaintView.this.invalidate();
-        }
-      });
-    }});
 
     final int colors[] = new int[] {
       Color.RED,
@@ -160,20 +186,7 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
     Log.i(TAG, "    out PaintView ctor");
   }
 
-  @Override
-  protected void onDraw(Canvas canvas) {
-    final int verboseLevel = 0;
-    if (verboseLevel >= 1) Log.i(TAG, "            in PaintView onDraw");
-    super.onDraw(canvas);
-    if (mShowUnfixed) {
-      drawStuff(canvas, unfixedStuff);
-    } else {
-      drawStuff(canvas, fixedStuff);
-    }
-    if (verboseLevel >= 1) Log.i(TAG, "            out PaintView onDraw");
-  }
-
-  private void drawStuff(Canvas canvas, Stuff stuff) {
+  private static void drawStuff(Canvas canvas, Stuff stuff) {
     CHECK_EQ(stuff.mPaths.size(), stuff.mCompletedPaints.size());
     for (int i = 0; i < stuff.mPaths.size(); ++i) {
       canvas.drawPath(stuff.mPaths.get(i), stuff.mCompletedPaints.get(i));
@@ -227,19 +240,20 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
                 if (false) {
                   // Overkill
                   stuff.mFingerPaths[id].computeBounds(mPathBounds, true);
-                  invalidate((int) mPathBounds.left, (int) mPathBounds.top,
+                  mTheTouchableDrawable.invalidate((int) mPathBounds.left, (int) mPathBounds.top,
                       (int) mPathBounds.right, (int) mPathBounds.bottom);
                 } else if (false){
                   // CBB: actually probably need to add half line width in all directions.
                   // But I'm not sure this selective invalidation actually does anything;
                   // I think it's the same as calling invalidate() with no args.
-                  invalidate((int)Math.min(stuff.prevX[id], x),
+                  // UPDATE: oh, I think it's because onDraw() is still naive.  see https://stackoverflow.com/questions/21706208/partial-redraw-invalidate-rect-rect
+                  mTheTouchableDrawable.invalidate((int)Math.min(stuff.prevX[id], x),
                              (int)Math.min(stuff.prevY[id], y),
                              (int)Math.max(stuff.prevX[id], x),
                              (int)Math.max(stuff.prevY[id], y));
                 } else {
                   // This seems to be adequate.  (?!)
-                  invalidate(10,10, 11,11);
+                  mTheTouchableDrawable.invalidate(10,10, 11,11);
                 }
               }
               stuff.prevX[id] = x;
@@ -254,7 +268,7 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
       if (verboseLevel >= 1) Log.i(TAG, "                  ending path "+actionId+": setLastPoint "+event.getX(actionIndex)+", "+event.getY(actionIndex));
       stuff.mFingerPaths[actionId].setLastPoint(event.getX(actionIndex), event.getY(actionIndex));
       stuff.mFingerPaths[actionId].computeBounds(mPathBounds, true);
-      invalidate((int) mPathBounds.left, (int) mPathBounds.top,
+      mTheTouchableDrawable.invalidate((int) mPathBounds.left, (int) mPathBounds.top,
           (int) mPathBounds.right, (int) mPathBounds.bottom);
       stuff.mFingerPaths[actionId] = null;
     }

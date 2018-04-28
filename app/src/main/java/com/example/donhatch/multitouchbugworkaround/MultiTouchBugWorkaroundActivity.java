@@ -7,17 +7,20 @@
 /*
 adb exec-out "run-as com.example.donhatch.multitouchbugworkaround cat /data/user/0/com.example.donhatch.multitouchbugworkaround/files/FixedOnTouchListener.trace.txt"
 adb exec-out "run-as com.example.donhatch.multitouchbugworkaround tail -1000000 -f /data/user/0/com.example.donhatch.multitouchbugworkaround/files/FixedOnTouchListener.trace.txt"
+I think that only works when it's a debug app, though.
 */
 
 package com.example.donhatch.multitouchbugworkaround;
 
+import android.content.Context;
 import android.content.res.Configuration;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.os.Handler;
 import android.util.Log;
 import android.view.View;
 import android.view.WindowManager;
-import android.os.Handler;
+import android.widget.LinearLayout;
 
 
 public class MultiTouchBugWorkaroundActivity extends AppCompatActivity {
@@ -28,9 +31,21 @@ public class MultiTouchBugWorkaroundActivity extends AppCompatActivity {
     final int verboseLevel = 1;
     if (verboseLevel >= 1) Log.i(TAG, "on onCreate");
     super.onCreate(savedInstanceState);
-    setContentView(new PaintView(this) {{
-      setBackgroundColor(0xffc0c0c0);
-    }});
+
+    final Context context = getApplicationContext();
+    if (false) {
+      setContentView(new PaintView(context) {{
+        setBackgroundColor(0xffc0c0c0);
+      }});
+    } else {
+      // I want to make it so it doesn't take up the whole screen, to see whether I can get an ACTION_OUTSIDE
+      setContentView(new LinearLayout(context) {{
+        setBackgroundColor(0xffc0c0c0);
+        addView(new PaintView(context) {{
+          setBackgroundColor(0xffc0c0c0);
+        }});
+      }});
+    }
 
     if (true) {
       new Handler().postDelayed(new Runnable() {

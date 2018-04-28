@@ -7,6 +7,8 @@
 // TODO: be able to actually play back the stuff parsed from a dump file:
 //   - be able to convert from LogicalMotionEvent(s) to MotionEvent
 // TODO: dump to a file instead of logcat, so it's not subject to size and rate constraints and random droppage
+// TODO: dump if possible when an exception is being thrown?  more generally, when something rare and interesting happens that I want to trace
+// TODO: investigate whether I can get ACTION_CANCEL and/or ACTION_OUTSIDE.
 
 // BUG: See BAD00-- still not fixed
 // BUG: See BAD01-- still not fixed
@@ -21,6 +23,7 @@
 //		    a bit later, causing id1 to do a stay-same-that's-not-anchor even though it *is* bugging.
 //		    BAD05.
 //		    IDEA: Note that the exceptional thing is during the POINTER_DOWN(2) event-- maybe can ignore that in the disarm test?
+//                  Q: can we characterize exactly when a stay-same is or is not an indicator of bugging or of not bugging?
 //              - or all three.  omg.  BAD04
 //          - if it doesn't work, 0&2 up and repeat previous step.
 //      2.
@@ -212,6 +215,12 @@ package com.example.donhatch.multitouchbugworkaround;
 
 import android.util.Log;
 import android.view.MotionEvent;
+import static android.view.MotionEvent.ACTION_DOWN;
+import static android.view.MotionEvent.ACTION_POINTER_DOWN;
+import static android.view.MotionEvent.ACTION_MOVE;
+import static android.view.MotionEvent.ACTION_POINTER_UP;
+import static android.view.MotionEvent.ACTION_UP;
+import static android.view.MotionEvent.ACTION_CANCEL;
 import android.view.View;
 import java.io.PrintWriter;
 import java.util.ArrayList;
@@ -253,6 +262,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     if (action == MotionEvent.ACTION_POINTER_UP) return "POINTER_UP";
     if (action == MotionEvent.ACTION_UP) return "UP";
     //if (action == MotionEvent.ACTION_CANCEL) return "CANCEL";  // I've never seen this, I don't think
+    //if (action == MotionEvent.ACTION_OUTSIDE) return "OUTSIDE";  // I've never seen this, I don't think
     throw new AssertionError("unrecognized MotionEvent action "+action);
   }
 
@@ -1127,8 +1137,26 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             // The bug is not happening (since, when the bug is happening,
             // staying the same always gets botched into moving to the anchor).
             if (verboseLevel >= 1) Log.i(TAG, "          pointer 0 stayed the same at "+mLastKnownGood0x+","+mLastKnownGood0y+", and is *not* anchor. bug isn't happening (or isn't happening any more).");
-            if (annotationOrNull != null) annotationOrNull.append("(DISARMED because id0="+mId0+" stayed the same and is *not* the anchor)");
-            moveToSTATE_DISARMED();
+            
+            // Exception: I've seen a rogue stay-the-same-that's-not-the-anchor in the following situation (BAD05):
+            //    1 was moving
+            //    0&2 down simultaneously, but only 0&1 started bugging
+            //    in fact, the 2 down happened later enough that we were alreadly armed and correctly fixing id 1
+            //    (this happened to be the last stationary of id 0's down).
+            //    on that 2 down, the 1 did a rogue stay-the-same-that's-not-the-anchor.
+            //    CBB: I'm not sure how to completely characterize this situation,
+            //    but I'll err on the side of assuming it's still bugging (when really not bugging,
+            //    we'll get evidence of not bugging soon enough anyway).
+            if (action != MotionEvent.ACTION_MOVE) {
+              if (annotationOrNull != null) annotationOrNull.append("(NOT DISARMING on rogue stay-the-same of id0="+mId0+" on action="+actionToString(action)+"("+unfixed.getPointerId(actionIndex)+") (id1="+mId1+")");
+              // CBB: seems like we're saying this a lot-- maybe could think about it differently; instead of last-known-good, it's just the last value seen that wasn't corrected... or, simply the last value output in the fixed event
+              mLastKnownGood0x = pointerCoords[index0].x;
+              mLastKnownGood0y = pointerCoords[index0].y;
+                // CHECK(false);  // coverage-- yes, this was hit
+            } else {
+              if (annotationOrNull != null) annotationOrNull.append("(DISARMED because id0="+mId0+" stayed the same and is *not* the anchor.  I think bug isn't happening (or isn't happening any more))");
+              moveToSTATE_DISARMED();
+            }
           } else {
             mLastKnownGood0x = pointerCoords[index0].x;
             mLastKnownGood0y = pointerCoords[index0].y;
@@ -1153,8 +1181,16 @@ public class FixedOnTouchListener implements View.OnTouchListener {
               // The bug is not happening (since, when the bug is happening,
               // staying the same always gets botched into moving to the anchor).
               if (verboseLevel >= 1) Log.i(TAG, "          pointer mId1="+mId1+" stayed the same at "+mLastKnownGood1x+","+mLastKnownGood1y+", and is *not* anchor. bug isn't happening (or isn't happening any more).");
-              if (annotationOrNull != null) annotationOrNull.append("(DISARMED because id1="+mId1+" stayed the same and is *not* the anchor)");
-              moveToSTATE_DISARMED();
+              // Check for exceptional case; see explanation above in the reverse situation
+              if (action != MotionEvent.ACTION_MOVE) {
+                if (annotationOrNull != null) annotationOrNull.append("(NOT DISARMING on rogue stay-the-same of id1="+mId1+" on action="+actionToString(action)+"("+unfixed.getPointerId(actionIndex)+") (id0="+mId0+")");
+                mLastKnownGood1x = pointerCoords[index1].x;
+                mLastKnownGood1y = pointerCoords[index1].y;
+                //CHECK(false);  // coverage-- yes, this was hit
+              } else {
+                if (annotationOrNull != null) annotationOrNull.append("(DISARMED because id1="+mId1+" stayed the same and is *not* the anchor.  I think bug isn't happening (or isn't happening any more))");
+                moveToSTATE_DISARMED();
+              }
             } else {
               mLastKnownGood1x = pointerCoords[index1].x;
               mLastKnownGood1y = pointerCoords[index1].y;
