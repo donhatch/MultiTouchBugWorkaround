@@ -3,7 +3,8 @@
 ./gradlew assembleDebug && adb install -r app/build/outputs/apk/debug/app-debug.apk && adb shell am start -n com.example.donhatch.multitouchbugworkaround/com.example.donhatch.multitouchbugworkaround.MultiTouchBugWorkaroundActivity -a android.intent.action.MAIN -c android.intent.category.LAUNCHER
 */
 // To retrieve log:
-// CBB: currently the program re-creates the file each time (I think?) but `tail -f` on android doesn't notice that
+// CBB: currently the program re-creates the file each time (I think?) but `tail -f` on android doesn't notice that.  Should I open it in append mode?  But then it will grow without bound?  Hmm.  Is there a shell 1-liner that does the required thing?
+// CBB: surely there's a better way than the following obscure recipe?
 /*
 adb exec-out "run-as com.example.donhatch.multitouchbugworkaround cat /data/user/0/com.example.donhatch.multitouchbugworkaround/files/FixedOnTouchListener.trace.txt"
 adb exec-out "run-as com.example.donhatch.multitouchbugworkaround tail -1000000 -f /data/user/0/com.example.donhatch.multitouchbugworkaround/files/FixedOnTouchListener.trace.txt"

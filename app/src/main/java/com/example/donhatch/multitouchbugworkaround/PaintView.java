@@ -51,7 +51,7 @@ public class PaintView extends FrameLayout {
 
   public static final int MAX_FINGERS = 10;
   private Paint[] mFingerPaints = new Paint[MAX_FINGERS];;
-  private RectF mPathBounds = new RectF();
+  private RectF mPathBoundsScratch = new RectF();
   private boolean mShowUnfixed = true;
 
   private View mTheTouchableDrawable;
@@ -76,18 +76,17 @@ public class PaintView extends FrameLayout {
       @Override
       protected void onDraw(Canvas canvas) {
         final int verboseLevel = 0;
-        if (verboseLevel >= 1) {
-          Rect clip = new Rect();
-          canvas.getClipBounds(clip);
-          if (verboseLevel >= 1) Log.i(TAG, "            in mTheTouchableDrawable onDraw clip="+clip);
-        }
+        Rect clipBounds = new Rect();
+        canvas.getClipBounds(clipBounds);
+        if (verboseLevel >= 1) Log.i(TAG, "            in mTheTouchableDrawable onDraw clipBounds="+clipBounds);
+        // CBB: could actually use clipBounds: cull away paths that don't intersect it
         super.onDraw(canvas);
         if (mShowUnfixed) {
           drawStuff(canvas, unfixedStuff);
         } else {
           drawStuff(canvas, fixedStuff);
         }
-        if (verboseLevel >= 1) Log.i(TAG, "            out mTheTouchableDrawable onDraw");
+        if (verboseLevel >= 1) Log.i(TAG, "            out mTheTouchableDrawable onDraw clipBounds="+clipBounds);
       }
     };
     addView(mTheTouchableDrawable, new LayoutParams(LayoutParams.MATCH_PARENT,LayoutParams.MATCH_PARENT));
@@ -126,7 +125,7 @@ public class PaintView extends FrameLayout {
       public boolean onTouch(View view, MotionEvent fixedEvent) {
         // This is our wrapped listener, after the fixer has done its fixing.
         // Record the fixed event.
-        applyEventToStuff(fixedEvent, fixedStuff, /*thisStuffIsVisible=*/mShowUnfixed);
+        applyEventToStuff(fixedEvent, fixedStuff, /*thisStuffIsVisible=*/!mShowUnfixed);
         return true;
       }
     }) {
@@ -134,7 +133,7 @@ public class PaintView extends FrameLayout {
       public boolean onTouch(View view, MotionEvent unfixedEvent) {
         // This is our interception of the event before the fixer sees it.
         // Record the unfixed event.
-        applyEventToStuff(unfixedEvent, unfixedStuff, /*thisStuffIsVisible=*/!mShowUnfixed);
+        applyEventToStuff(unfixedEvent, unfixedStuff, /*thisStuffIsVisible=*/mShowUnfixed);
         // Then pass it through to the FixedOnTouchListener,
         // which creates a fixed event which is passed
         // to our wrapped OnTouchListener's onTouch() above.
@@ -142,7 +141,7 @@ public class PaintView extends FrameLayout {
       }
 
       {
-        // See top of MultiTouchBugWorkaroundActivity.java for recipe on how to get this back out
+        // See top of MultiTouchBugWorkaroundActivity.java for recipe on how to get this back out.
         Log.i(TAG, "      YOU ARE HERE==============================================================================================================================================================================================================================================================================================================================================");
         String traceFileName = "FixedOnTouchListener.trace.txt";
         String traceFilePathNameIThink = context.getFilesDir().getAbsolutePath()+"/"+traceFileName;
@@ -195,6 +194,7 @@ public class PaintView extends FrameLayout {
   private void applyEventToStuff(MotionEvent event, Stuff stuff, boolean thisStuffIsVisible) {
 
     final int verboseLevel = 0;
+    if (verboseLevel >= 1) Log.i(TAG, "                in applyEventToStuff(stuff, thisStuffIsVisible="+thisStuffIsVisible+")");
 
     int pointerCount = event.getPointerCount();
     int cappedPointerCount = pointerCount > MAX_FINGERS ? MAX_FINGERS : pointerCount;
@@ -237,23 +237,22 @@ public class PaintView extends FrameLayout {
               if (verboseLevel >= 1) Log.i(TAG, "                  adding to path "+id+": lineTo "+x+", "+y+"  (h="+h+"/"+historySize+")");
               stuff.mFingerPaths[id].lineTo(x, y);
               if (thisStuffIsVisible) {
-                if (false) {
+                if (true) {
                   // Overkill
-                  stuff.mFingerPaths[id].computeBounds(mPathBounds, true);
-                  mTheTouchableDrawable.invalidate((int) mPathBounds.left, (int) mPathBounds.top,
-                      (int) mPathBounds.right, (int) mPathBounds.bottom);
-                } else if (false){
-                  // CBB: actually probably need to add half line width in all directions.
-                  // But I'm not sure this selective invalidation actually does anything;
-                  // I think it's the same as calling invalidate() with no args.
-                  // UPDATE: oh, I think it's because onDraw() is still naive.  see https://stackoverflow.com/questions/21706208/partial-redraw-invalidate-rect-rect
-                  mTheTouchableDrawable.invalidate((int)Math.min(stuff.prevX[id], x),
-                             (int)Math.min(stuff.prevY[id], y),
-                             (int)Math.max(stuff.prevX[id], x),
-                             (int)Math.max(stuff.prevY[id], y));
+                  stuff.mFingerPaths[id].computeBounds(mPathBoundsScratch, true);
+                  mTheTouchableDrawable.invalidate((int) mPathBoundsScratch.left, (int) mPathBoundsScratch.top,
+                      (int) mPathBoundsScratch.right, (int) mPathBoundsScratch.bottom);
                 } else {
-                  // This seems to be adequate.  (?!)
-                  mTheTouchableDrawable.invalidate(10,10, 11,11);
+                  // NOTE: if hw accel is on (which it is by default),
+                  // then onDraw() never sees these reduced clip bounds.
+                  // (We *do* still need to invalidate, but the region we give it is ignored)
+                  final int fudge = 2;  // theoretically should be half-line-width, I think, but 2 seems necessary
+                  int x0 = (int)Math.min(stuff.prevX[id], x)-fudge;
+                  int y0 = (int)Math.min(stuff.prevY[id], y)-fudge;
+                  int x1 = (int)Math.max(stuff.prevX[id], x)+fudge;
+                  int y1 = (int)Math.max(stuff.prevY[id], y)+fudge;
+                  if (verboseLevel >= 1) Log.i(TAG, "invalidating "+x0+","+y0+" .. "+x1+","+y1+"");
+                  mTheTouchableDrawable.invalidate(x0,y0,x1,y1);
                 }
               }
               stuff.prevX[id] = x;
@@ -267,11 +266,15 @@ public class PaintView extends FrameLayout {
     if ((action == MotionEvent.ACTION_POINTER_UP || action == MotionEvent.ACTION_UP) && actionId < MAX_FINGERS) {
       if (verboseLevel >= 1) Log.i(TAG, "                  ending path "+actionId+": setLastPoint "+event.getX(actionIndex)+", "+event.getY(actionIndex));
       stuff.mFingerPaths[actionId].setLastPoint(event.getX(actionIndex), event.getY(actionIndex));
-      stuff.mFingerPaths[actionId].computeBounds(mPathBounds, true);
-      mTheTouchableDrawable.invalidate((int) mPathBounds.left, (int) mPathBounds.top,
-          (int) mPathBounds.right, (int) mPathBounds.bottom);
+      stuff.mFingerPaths[actionId].computeBounds(mPathBoundsScratch, true);
+      mTheTouchableDrawable.invalidate(
+          (int) mPathBoundsScratch.left,
+          (int) mPathBoundsScratch.top,
+          (int) mPathBoundsScratch.right,
+          (int) mPathBoundsScratch.bottom);
       stuff.mFingerPaths[actionId] = null;
     }
+    if (verboseLevel >= 1) Log.i(TAG, "                out applyEventToStuff(stuff, thisStuffIsVisible="+thisStuffIsVisible+")");
   }  // applyEventToStuff
 
 }

@@ -1305,20 +1305,6 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           /*other=*/mLogicalMotionEventsSinceFirstDown,
           /*annotationsOrNull=*/null);
 
-        if (verboseLevel >= 1) {
-          // TODO: just get rid of this, it's flaky now
-          Log.i(TAG, "      ===============================================================");
-          Log.i(TAG, "      LOGICAL MOTION EVENT SEQUENCE, BEFORE FIX:");
-          LogicalMotionEvent.LogMultiline(TAG, beforeString);
-          Log.i(TAG, "      ---------------------------------------------------------------");
-          Log.i(TAG, "      LOGICAL MOTION EVENT SEQUENCE, DURING FIX:");
-          LogicalMotionEvent.LogMultiline(TAG, duringString);
-          Log.i(TAG, "      ---------------------------------------------------------------");
-          Log.i(TAG, "      LOGICAL MOTION EVENT SEQUENCE, AFTER FIX:");
-          LogicalMotionEvent.LogMultiline(TAG, afterString);
-          Log.i(TAG, "      ===============================================================");
-        }
-
         if (mTracePrintWriterOrNull != null) {
           mTracePrintWriterOrNull.println("      ===============================================================");
           mTracePrintWriterOrNull.println("      LOGICAL MOTION EVENT SEQUENCE, BEFORE FIX:");

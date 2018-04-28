@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.example.donhatch.multitouchbugworkaround">
+    package="com.example.donhatch.multitouchbugworkaround"
+    xmlns:ignored="dummy_identifier"
+    ignored:comment="the `ignored` namespace is for notes and comments"
+    >
 
     <application
         android:allowBackup="true"
@@ -8,6 +11,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:hardwareAccelerated="true"  ignored:comment="I think true is faster in spite of the issue where it makes invalidation bounds be ignored, see https://stackoverflow.com/questions/7233830/partial-invalidation-in-custom-android-view-with-hardware-acceleration  but I don't think I believe what Romain Guy is saying, see also https://stackoverflow.com/questions/29970291/android-partial-invalidation-draws-the-entire-view-while-hardware-accelerated?rq=1#answer-32911532"
         android:theme="@style/AppTheme">
         <activity android:name=".MultiTouchBugWorkaroundActivity">
             <intent-filter>
