@@ -588,11 +588,11 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                                 STRINGIFY_COMPACT(e.ids)));
         for (int id = 0; id < e.all_axis_values.length; ++id) {
           if (e.all_axis_values[id] == null) {
-            //sb.append(String.format("%29s", ""));
-            sb.append(String.format("%52s", "", ""));
+            sb.append(String.format("%29s", ""));
+            //sb.append(String.format("%52s", "", ""));
           } else {
-            //String coordsString = String.format("%.9g,%.9g", e.x(id), e.y(id));
-            String coordsString = String.format("%.9g,%.9g,%.9g,%.9g", e.x(id), e.y(id), e.pressure(id), e.size(id));
+            String coordsString = String.format("%.9g,%.9g", e.x(id), e.y(id));
+            //String coordsString = String.format("%.9g,%.9g,%.9g,%.9g", e.x(id), e.y(id), e.pressure(id), e.size(id));  // pressure&size turned out to be not indicators
 
             boolean parenthesized = false;
             if (i >= 1) {
@@ -622,58 +622,18 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             }
 
             if (true) {
-              // Look for smoking gun: pressure,size same as previous but x,y *not* same as most-recent-good.
-              // Bleah, it's not conclusive--- lots of false positives, i.e. pressure,size same as previous
-              // and x,y legitimately different from previous.
-              // Haven't seen any false negatives though.
-              boolean foundSmokingGun = false;
-              if (i > 0) {
-                LogicalMotionEvent ePrev = list.get(i-1);
-                // XXX this type need not be MOVE in order for bug to manifest..  must previous type be MOVE in order for bug to manifest?
-
-                if (id < ePrev.all_axis_values.length
-                 && ePrev.all_axis_values[id] != null
-                 && e.pressure(id) == ePrev.pressure(id)
-                 && e.size(id) == ePrev.size(id)
-                 //&& (e.x(id) != ePrev.x(id) || e.y(id) != ePrev.y(id))   // XXX wrong!  need to be comparing with previous *corrected*
-                 && (e.x(id) != mostRecentNonSuspiciousX[id] || e.y(id) != mostRecentNonSuspiciousY[id])   // XXX wrong!  need to be comparing with previous *corrected*
-                 ) {
-                  foundSmokingGun = true;
+              String punc = " ";
+              if (other != null) {
+                LogicalMotionEvent eOther = other.get(i);
+                CHECK_EQ(eOther.all_axis_values.length, e.all_axis_values.length);
+                if (e.x(id) != eOther.x(id)
+                 || e.y(id) != eOther.y(id)) {
+                  punc = punctuationWhereDifferentFromOther;
                 }
               }
-
-              if (knownToBeSafe) {
-                //Log.i(TAG, "    KILLING QUESTION MARK on "+id+" BECAUSE knownToBeSafe");
-                foundSmokingGun = false;
-              }
-              if (id != 0 && id != idOfInterest) { // those are the only suspects
-                //Log.i(TAG, "    KILLING QUESTION MARK on "+id+" BECAUSE not a suspect");
-                foundSmokingGun = false;
-              }
-              if (id == 0 && (e.x(0) != xOfInterestForId0 || e.y(0) != yOfInterestForId0)) {  // id 0 only bugs on the coords on which it went down
-                //Log.i(TAG, "    KILLING QUESTION MARK on "+id+" BECAUSE the 0 suepect and not the coords on which it went down");
-                foundSmokingGun = false;
-              }
-              if (id != 0 && (e.x(id) != xOfInterestForIdNonzero || e.y(id) != yOfInterestForIdNonzero)) {  // id nonzero only bugs on those coords. when not decided yet, it doesn't bug
-                //Log.i(TAG, "    KILLING QUESTION MARK on "+id+" BECAUSE the nonzero suspect and not the coords two after the POINTER_DOWN(0) event which are "+xOfInterestForIdNonzero+","+yOfInterestForIdNonzero+"");
-                foundSmokingGun = false;
-              }
-
-              if (!foundSmokingGun) {
-                mostRecentNonSuspiciousX[id] = e.x(id);
-                mostRecentNonSuspiciousY[id] = e.y(id);
-              }
-
-              if (id==0 && justNowGotCoordsOfInterestForId0) {
-                coordsString += "!";
-              } else if (id!=0 && justNowGotCoordsOfInterestForIdNonzero) {
-                coordsString += "!";
-              } else if (foundSmokingGun) {
-                coordsString += "?";
-              } else {
-                coordsString += " ";
-              }
+              coordsString += punc;
             }
+
             sb.append(coordsString);
           }
         }
@@ -1232,9 +1192,9 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           /*other=*/mFixedLogicalMotionEventsSinceFirstDown,
           /*annotationsOrNull=*/null);
         String duringString = LogicalMotionEvent.dumpString(
-          mFixedLogicalMotionEventsSinceFirstDown,
-          /*punctuationWhereDifferentFromOther=*/"!",
-          /*other=*/mLogicalMotionEventsSinceFirstDown,
+          mLogicalMotionEventsSinceFirstDown,
+          /*punctuationWhereDifferentFromOther=*/"?",
+          /*other=*/mFixedLogicalMotionEventsSinceFirstDown,
           mAnnotationsOrNull);
         String afterString = LogicalMotionEvent.dumpString(
           mFixedLogicalMotionEventsSinceFirstDown,
