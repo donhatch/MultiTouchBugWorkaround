@@ -1045,6 +1045,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       moveToSTATE_ARMING(id0, id1,
                          /*anchor0x=*/pointerCoords[actionIndex].x,
                          /*anchor0y=*/pointerCoords[actionIndex].y);
+      if (annotationOrNull != null) annotationOrNull.append("(ARMING: id0="+mId0+" id1="+mId1+" anchor0="+mAnchor0x+","+mAnchor0y+")");
     } else if (mCurrentState == STATE_ARMING) {
       if (action == MotionEvent.ACTION_MOVE) {
         if (historyIndex == historySize  // i.e. this is the "primary" sub-event, not historical
@@ -1059,12 +1060,14 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                             /*lastKnownGood0y=*/pointerCoords[index0].y,
                             /*lastKnownGood1x=*/pointerCoords[index1].x,
                             /*lastKnownGood1y=*/pointerCoords[index1].y);
+          if (annotationOrNull != null) annotationOrNull.append("(ARMED: id0="+mId0+" id1="+mId1+" anchor0="+mAnchor0x+","+mAnchor0y+" anchor1="+mAnchor1x+","+mAnchor1y+" lastKnownGood0="+mLastKnownGood0x+","+mLastKnownGood0y+" lastKnownGood1="+mLastKnownGood1x+","+mLastKnownGood1y+")");
         } else {
           // We're in a historical sub-event of what may be the arming event.  Do nothing special.
         }
       } else {
         // Didn't see the second event of the arming sequence; disarm.
         moveToSTATE_DISARMED();
+        if (annotationOrNull != null) annotationOrNull.append("(DISARMED because didn't see second event of arming sequence)");
       }
     } else if (mCurrentState == STATE_ARMED) {  // i.e. if was already armed (not just now got armed)
       final int index0 = unfixed.findPointerIndex(mId0);
@@ -1085,6 +1088,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             // staying the same always gets botched into moving to the anchor).
             if (verboseLevel >= 1) Log.i(TAG, "          pointer 0 stayed the same at "+mLastKnownGood0x+","+mLastKnownGood0y+", and is *not* anchor. bug isn't happening (or isn't happening any more).");
             moveToSTATE_DISARMED();
+            if (annotationOrNull != null) annotationOrNull.append("(DISARMED because id0="+mId0+" stayed the same and is *not* the anchor)");
           } else {
             mLastKnownGood0x = pointerCoords[index0].x;
             mLastKnownGood0y = pointerCoords[index0].y;
@@ -1110,6 +1114,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
               // staying the same always gets botched into moving to the anchor).
               if (verboseLevel >= 1) Log.i(TAG, "          pointer mId1="+mId1+" stayed the same at "+mLastKnownGood1x+","+mLastKnownGood1y+", and is *not* anchor. bug isn't happening (or isn't happening any more).");
               moveToSTATE_DISARMED();
+              if (annotationOrNull != null) annotationOrNull.append("(DISARMED because id0="+mId1+" stayed the same and is *not* the anchor)");
             } else {
               mLastKnownGood1x = pointerCoords[index1].x;
               mLastKnownGood1y = pointerCoords[index1].y;
