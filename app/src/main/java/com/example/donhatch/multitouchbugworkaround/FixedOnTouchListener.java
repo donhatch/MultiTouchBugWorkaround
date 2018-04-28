@@ -216,7 +216,6 @@ package com.example.donhatch.multitouchbugworkaround;
 import android.util.Log;
 import android.view.MotionEvent;
 import static android.view.MotionEvent.ACTION_DOWN;
-import static android.view.MotionEvent.ACTION_DOWN;
 import static android.view.MotionEvent.ACTION_POINTER_DOWN;
 import static android.view.MotionEvent.ACTION_MOVE;
 import static android.view.MotionEvent.ACTION_POINTER_UP;
