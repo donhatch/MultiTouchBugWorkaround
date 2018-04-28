@@ -216,6 +216,7 @@ package com.example.donhatch.multitouchbugworkaround;
 import android.util.Log;
 import android.view.MotionEvent;
 import static android.view.MotionEvent.ACTION_DOWN;
+import static android.view.MotionEvent.ACTION_DOWN;
 import static android.view.MotionEvent.ACTION_POINTER_DOWN;
 import static android.view.MotionEvent.ACTION_MOVE;
 import static android.view.MotionEvent.ACTION_POINTER_UP;
@@ -256,13 +257,13 @@ public class FixedOnTouchListener implements View.OnTouchListener {
   // Note, MotionEvent has an actionToString(), but it takes an unmasked action;
   // we want to take an unmasked action.
   public static String actionToString(int action) {
-    if (action == MotionEvent.ACTION_DOWN) return "DOWN";
-    if (action == MotionEvent.ACTION_POINTER_DOWN) return "POINTER_DOWN";
-    if (action == MotionEvent.ACTION_MOVE) return "MOVE";
-    if (action == MotionEvent.ACTION_POINTER_UP) return "POINTER_UP";
-    if (action == MotionEvent.ACTION_UP) return "UP";
-    //if (action == MotionEvent.ACTION_CANCEL) return "CANCEL";  // I've never seen this, I don't think
-    //if (action == MotionEvent.ACTION_OUTSIDE) return "OUTSIDE";  // I've never seen this, I don't think
+    if (action == ACTION_DOWN) return "DOWN";
+    if (action == ACTION_POINTER_DOWN) return "POINTER_DOWN";
+    if (action == ACTION_MOVE) return "MOVE";
+    if (action == ACTION_POINTER_UP) return "POINTER_UP";
+    if (action == ACTION_UP) return "UP";
+    //if (action == ACTION_CANCEL) return "CANCEL";  // I've never seen this, I don't think
+    //if (action == ACTION_OUTSIDE) return "OUTSIDE";  // I've never seen this, I don't think
     throw new AssertionError("unrecognized MotionEvent action "+action);
   }
 
@@ -569,7 +570,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         boolean justNowGotCoordsOfInterestForId0 = false;
         boolean justNowGotCoordsOfInterestForIdNonzero = false;
 
-        if (e.action == MotionEvent.ACTION_POINTER_DOWN
+        if (e.action == ACTION_POINTER_DOWN
          && e.actionId == 0
          && e.ids.length == 2) {
           CHECK_EQ(e.ids[0], 0);
@@ -589,10 +590,10 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         if (i >= 2) {
           LogicalMotionEvent ePrevPrev = list.get(i-2);
           LogicalMotionEvent ePrev = list.get(i-1);
-          if (ePrevPrev.action == MotionEvent.ACTION_POINTER_DOWN
+          if (ePrevPrev.action == ACTION_POINTER_DOWN
            && ePrevPrev.actionId == 0
            && ePrevPrev.ids.length == 2
-           && ePrev.action == MotionEvent.ACTION_MOVE) {
+           && ePrev.action == ACTION_MOVE) {
             CHECK_GE(idOfInterest, 0);
             CHECK_LT(idOfInterest, e.all_axis_values.length);
             xOfInterestForIdNonzero = e.x(idOfInterest);
@@ -603,14 +604,14 @@ public class FixedOnTouchListener implements View.OnTouchListener {
 
         StringBuilder lineBuilder = new StringBuilder();
         long relativeTimeMillis = e.eventTimeMillis - refTimeMillis;
-        if (e.isHistorical) CHECK_EQ(e.action, MotionEvent.ACTION_MOVE);
-        if (e.action==MotionEvent.ACTION_MOVE) CHECK_EQ(e.actionId, e.ids[0]);
+        if (e.isHistorical) CHECK_EQ(e.action, ACTION_MOVE);
+        if (e.action==ACTION_MOVE) CHECK_EQ(e.actionId, e.ids[0]);
         lineBuilder.append(String.format("          %3d.%03d %4d/%d: %16s %-"+idsWidth+"s",
                                          relativeTimeMillis/1000,
                                          relativeTimeMillis%1000,
                                          i, n,
-                                         (e.action==MotionEvent.ACTION_MOVE && e.isHistorical ? "" :
-                                         (actionToString(e.action)+(e.action==MotionEvent.ACTION_MOVE?"  ":"("+e.actionId+")"))),
+                                         (e.action==ACTION_MOVE && e.isHistorical ? "" :
+                                         (actionToString(e.action)+(e.action==ACTION_MOVE?"  ":"("+e.actionId+")"))),
                                          STRINGIFY_COMPACT(e.ids)));
         for (int id = 0; id < e.all_axis_values.length; ++id) {
           if (e.all_axis_values[id] == null) {
@@ -835,11 +836,11 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           String actionString = matcher.group("action");
           if (actionString == null) {
             isHistorical = true;
-            action = MotionEvent.ACTION_MOVE;
+            action = ACTION_MOVE;
             actionId = ids[0];
           } else if (actionString.equals("MOVE")) {
             isHistorical = false;
-            action = MotionEvent.ACTION_MOVE;
+            action = ACTION_MOVE;
             actionId = ids[0];
           } else {
             isHistorical = false;
@@ -848,10 +849,10 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       if (verboseLevel >= 1) Log.i(TAG, "            WTF "+(actionString.length()-2));
             actionId = Integer.parseInt(actionString.substring(/*start=*/actionString.length()-2, /*end=*/actionString.length()-1));
             String actionName = actionString.substring(/*start=*/0, /*end=*/actionString.length()-3);
-            if (actionName.equals("DOWN")) action = MotionEvent.ACTION_DOWN;
-            else if (actionName.equals("POINTER_DOWN")) action = MotionEvent.ACTION_POINTER_DOWN;
-            else if (actionName.equals("POINTER_UP")) action = MotionEvent.ACTION_POINTER_UP;
-            else if (actionName.equals("UP")) action = MotionEvent.ACTION_UP;
+            if (actionName.equals("DOWN")) action = ACTION_DOWN;
+            else if (actionName.equals("POINTER_DOWN")) action = ACTION_POINTER_DOWN;
+            else if (actionName.equals("POINTER_UP")) action = ACTION_POINTER_UP;
+            else if (actionName.equals("UP")) action = ACTION_UP;
             else throw new AssertionError("unrecognized action "+STRINGIFY(actionName));
           }
         }
@@ -1088,7 +1089,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     // No matter what state we're in,
     // if we see the first event of the arming sequence,
     // honor it.
-    if (action == MotionEvent.ACTION_POINTER_DOWN
+    if (action == ACTION_POINTER_DOWN
      && pointerCount == 2) {
       final int id0 = unfixed.getPointerId(actionIndex);  // the one going down
       final int id1 = unfixed.getPointerId(1 - actionIndex);  // the one that was already down
@@ -1097,7 +1098,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                          /*anchor0y=*/pointerCoords[actionIndex].y);
       if (annotationOrNull != null) annotationOrNull.append("(ARMING: id0="+mId0+" id1="+mId1+" anchor0="+mAnchor0x+","+mAnchor0y+")");
     } else if (mCurrentState == STATE_ARMING) {
-      if (action == MotionEvent.ACTION_MOVE) {
+      if (action == ACTION_MOVE) {
         if (historyIndex == historySize  // i.e. this is the "primary" sub-event, not historical
          && pointerCount == 2
          && unfixed.findPointerIndex(mId0) >= 0
@@ -1147,7 +1148,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             //    CBB: I'm not sure how to completely characterize this situation,
             //    but I'll err on the side of assuming it's still bugging (when really not bugging,
             //    we'll get evidence of not bugging soon enough anyway).
-            if (action != MotionEvent.ACTION_MOVE) {
+            if (action != ACTION_MOVE) {
               if (annotationOrNull != null) annotationOrNull.append("(NOT DISARMING on rogue stay-the-same of id0="+mId0+" on action="+actionToString(action)+"("+unfixed.getPointerId(actionIndex)+") (id1="+mId1+")");
               // CBB: seems like we're saying this a lot-- maybe could think about it differently; instead of last-known-good, it's just the last value seen that wasn't corrected... or, simply the last value output in the fixed event
               mLastKnownGood0x = pointerCoords[index0].x;
@@ -1182,7 +1183,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
               // staying the same always gets botched into moving to the anchor).
               if (verboseLevel >= 1) Log.i(TAG, "          pointer mId1="+mId1+" stayed the same at "+mLastKnownGood1x+","+mLastKnownGood1y+", and is *not* anchor. bug isn't happening (or isn't happening any more).");
               // Check for exceptional case; see explanation above in the reverse situation
-              if (action != MotionEvent.ACTION_MOVE) {
+              if (action != ACTION_MOVE) {
                 if (annotationOrNull != null) annotationOrNull.append("(NOT DISARMING on rogue stay-the-same of id1="+mId1+" on action="+actionToString(action)+"("+unfixed.getPointerId(actionIndex)+") (id0="+mId0+")");
                 mLastKnownGood1x = pointerCoords[index1].x;
                 mLastKnownGood1y = pointerCoords[index1].y;
@@ -1286,7 +1287,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       }
     }
 
-    if (unfixed.getActionMasked() == MotionEvent.ACTION_UP) {
+    if (unfixed.getActionMasked() == ACTION_UP) {
 
       if (mTracePrintWriterOrNull != null || verboseLevel >= 1) {
         String beforeString = LogicalMotionEvent.dumpString(
