@@ -199,6 +199,7 @@ package com.example.donhatch.multitouchbugworkaround;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
+import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.regex.Pattern;
@@ -210,17 +211,24 @@ import static com.example.donhatch.multitouchbugworkaround.STRINGIFY.STRINGIFY;
 
 public class FixedOnTouchListener implements View.OnTouchListener {
 
-  public interface OnTouchListener2 {
-    public boolean onTouch(View view, MotionEvent unfixed, MotionEvent fixed);
-  }
+  private static final String TAG = MultiTouchBugWorkaroundActivity.class.getSimpleName();  // XXX
 
   public View.OnTouchListener wrapped = null;
-
   public FixedOnTouchListener(View.OnTouchListener wrapped) {
     this.wrapped = wrapped;
   }
 
-  private static final String TAG = MultiTouchBugWorkaroundActivity.class.getSimpleName();  // XXX
+  private PrintWriter mTracePrintWriterOrNull = null;
+  private ArrayList<StringBuilder> mAnnotationsOrNull = null;
+  private ArrayList<StringBuilder> mFixedAnnotationsOrNull = null;
+  private ArrayList<LogicalMotionEvent> mLogicalMotionEventsSinceFirstDown = null;
+  private ArrayList<LogicalMotionEvent> mFixedLogicalMotionEventsSinceFirstDown = null;
+  public void setTracePrintWriter(PrintWriter tracePrintWriter) {
+    this.mTracePrintWriterOrNull = tracePrintWriter;
+    this.mAnnotationsOrNull = tracePrintWriter!=null ? new ArrayList<StringBuilder>() : null;
+    this.mLogicalMotionEventsSinceFirstDown = tracePrintWriter!=null ? new ArrayList<LogicalMotionEvent>() : null;
+    this.mFixedLogicalMotionEventsSinceFirstDown = tracePrintWriter!=null ? new ArrayList<LogicalMotionEvent>() : null;
+  }
 
   // Note, MotionEvent has an actionToString(), but it takes an unmasked action;
   // we want to take an unmasked action.
@@ -348,14 +356,14 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           } else {
             motionEvent.getHistoricalPointerCoords(index, h, all_axis_values[id]);
           }
-          CHECK_EQ(Math.abs(all_axis_values[id].getAxisValue(MotionEvent.AXIS_ORIENTATION)), 1.57079637f);  // XXX not sure if this is reliable on all devices, but it's what I always get
+          // Empirically, AXIS_ORIENTATION is 0, +-pi/2, or pi, depending on current device orientation (of course)
           CHECK_EQ(all_axis_values[id].getAxisValue(MotionEvent.AXIS_RELATIVE_X), 0.f);  // XXX not sure if this is reliable on all devices, but it's what I always get
           CHECK_EQ(all_axis_values[id].getAxisValue(MotionEvent.AXIS_RELATIVE_Y), 0.f);  // XXX not sure if this is reliable on all devices, but it's what I always get
           // also, rawX()/rawY() doesn't seem to be helpful: (1) can't query it per-history nor per-pointer, (2) the bug apparently affects this too so it doesn't give any clues
         }
         list.add(new LogicalMotionEvent(h<historySize, eventTimeMillis, action, actionId, ids, all_axis_values));
       }
-    }
+    }  // breakDown
 
     // A B C AA AB AC BA BB BC CA CB CC AAA AAB ...
     private static String GenerateLabel(int labelIndex) {
@@ -906,19 +914,23 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           ""),
       };  // dumpStrings
 
-      for (final String dumpString : dumpStrings) {
+      for (final String dumpStringIn : dumpStrings) {
         ArrayList<LogicalMotionEvent> parsed = null;
         try {
-          parsed = parseDump(dumpString);
+          parsed = parseDump(dumpStringIn);
         } catch (java.text.ParseException e) {
           throw new AssertionError(e);
         }
         if (parsed != null) {
+          String dumpStringOut = dumpString(parsed);
+
           Log.i(TAG, "          parseDump succeeded!");
           Log.i(TAG, "          Here's it back out:");
           Log.i(TAG, "          ============================");
-          LogMultiline(TAG, dumpString(parsed));
+          LogMultiline(TAG, dumpStringOut);
           Log.i(TAG, "          ============================");
+
+          // XXX I'd like to print to mTracePrintWriter, but that's not static
         }
       }
 
@@ -932,9 +944,6 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     LogicalMotionEvent.testParseDump();
     if (verboseLevel >= 1) Log.i(TAG, "    out FixedOnTouchListener.unitTest");
   }
-
-  private ArrayList<LogicalMotionEvent> logicalMotionEventsSinceFirstDown = new ArrayList<LogicalMotionEvent>();
-  private ArrayList<LogicalMotionEvent> fixedLogicalMotionEventsSinceFirstDown = new ArrayList<LogicalMotionEvent>();
 
   // The sequence of events that arms the fixer is two consecutive events:
   //     1. POINTER_DOWN(0) with exactly one other pointer id1 already down, followed by:
@@ -954,7 +963,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
   //       both on that UP event and subsequent ones.
   //       generally only for about 1/10 of a second, but who knows)
   //     - we could disarm id 0 when it goes UP, and disarm id id1 when it goes up, though.
-  // UPDATE: actually the going-down id need not be 0.  We call it id0.
+  // UPDATE: actually the going-down id is sometimes not zero (infrequently).  We call it id0.
   // So the states are:
   private final int STATE_DISARMED = 0;
   private final int STATE_ARMING = 1;
@@ -1019,7 +1028,13 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     mLastKnownGood1y = lastKnownGood1y;
   }
 
-  private void correctPointerCoordsUsingState(MotionEvent unfixed, int historyIndex, long eventTime, MotionEvent.PointerCoords pointerCoords[]) {
+  private void correctPointerCoordsUsingState(
+      MotionEvent unfixed,
+      int historyIndex,
+      long eventTime,
+      MotionEvent.PointerCoords pointerCoords[],
+      ArrayList<StringBuilder> annotationsOrNull  // if not null, we append one item.
+      ) {
     final int verboseLevel = 0;
     if (verboseLevel >= 1) Log.i(TAG, "        in correctPointerCoordsUsingState(historyIndex="+historyIndex+"/"+unfixed.getHistorySize()+", eventTime="+(eventTime-unfixed.getDownTime())/1000.+")  before: "+stateToString(mCurrentState));
     if (verboseLevel >= 1) Log.i(TAG, "          before: id0="+mId0+" id1="+mId1+" anchor0="+mAnchor0x+","+mAnchor0y+" anchor1="+mAnchor1x+","+mAnchor1y+" lkg0="+mLastKnownGood0x+","+mLastKnownGood0y+" lkg1="+mLastKnownGood1x+","+mLastKnownGood1y+"");
@@ -1124,7 +1139,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     final int verboseLevel = 1;  // 0: nothing, 1: dump entire sequence on final UP, 2: and in/out
     if (verboseLevel >= 2) Log.i(TAG, "    in FixedOnTouchListener onTouch");
 
-    LogicalMotionEvent.breakDown(unfixed, logicalMotionEventsSinceFirstDown);  // for post-mortem analysis
+    LogicalMotionEvent.breakDown(unfixed, mLogicalMotionEventsSinceFirstDown);  // for post-mortem analysis
 
     boolean answer = false;
     {
@@ -1150,7 +1165,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             }
           }
           long subEventTime = h==historySize ? unfixed.getEventTime() : unfixed.getHistoricalEventTime(h);
-          correctPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords);
+          correctPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords, mAnnotationsOrNull);
           int historicalMetaState = unfixed.getMetaState(); // huh? this can't be right, but I don't see any way to query metaState per-history
           if (h == 0) {
             fixed = MotionEvent.obtain(
@@ -1178,7 +1193,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                            historicalMetaState);
           }
         }
-        LogicalMotionEvent.breakDown(fixed, fixedLogicalMotionEventsSinceFirstDown);  // for post-mortem analysis
+        LogicalMotionEvent.breakDown(fixed, mFixedLogicalMotionEventsSinceFirstDown);  // for post-mortem analysis
         answer = wrapped.onTouch(view, fixed);
       } finally {
         if (fixed != null) {
@@ -1190,16 +1205,30 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     if (unfixed.getActionMasked() == MotionEvent.ACTION_UP) {
       if (verboseLevel >= 1) {
         Log.i(TAG, "      ===============================================================");
-        Log.i(TAG, "      LOGICAL MOTION EVENT SEQUENCE:");
-        LogicalMotionEvent.LogMultiline(TAG, LogicalMotionEvent.dumpString(logicalMotionEventsSinceFirstDown));
+        Log.i(TAG, "      UNFIXED LOGICAL MOTION EVENT SEQUENCE:");
+        String unfixedString = LogicalMotionEvent.dumpString(mLogicalMotionEventsSinceFirstDown);
+        LogicalMotionEvent.LogMultiline(TAG, unfixedString);
         Log.i(TAG, "      ===============================================================");
         Log.i(TAG, "      ===============================================================");
         Log.i(TAG, "      FIXED LOGICAL MOTION EVENT SEQUENCE:");
-        LogicalMotionEvent.LogMultiline(TAG, LogicalMotionEvent.dumpString(fixedLogicalMotionEventsSinceFirstDown));
+        String fixedString = LogicalMotionEvent.dumpString(mFixedLogicalMotionEventsSinceFirstDown);
+        LogicalMotionEvent.LogMultiline(TAG, fixedString);
         Log.i(TAG, "      ===============================================================");
+
+        if (mTracePrintWriterOrNull != null) {
+          mTracePrintWriterOrNull.println("      ===============================================================");
+          mTracePrintWriterOrNull.println("      UNFIXED LOGICAL MOTION EVENT SEQUENCE:");
+          mTracePrintWriterOrNull.println(unfixedString);
+          mTracePrintWriterOrNull.println("      ===============================================================");
+          mTracePrintWriterOrNull.println("      ===============================================================");
+          mTracePrintWriterOrNull.println("      FIXED LOGICAL MOTION EVENT SEQUENCE:");
+          mTracePrintWriterOrNull.println(fixedString);
+          mTracePrintWriterOrNull.println("      ===============================================================");
+          mTracePrintWriterOrNull.flush();
+        }
       }
-      logicalMotionEventsSinceFirstDown.clear();
-      fixedLogicalMotionEventsSinceFirstDown.clear();
+      mLogicalMotionEventsSinceFirstDown.clear();
+      mFixedLogicalMotionEventsSinceFirstDown.clear();
     }
 
     if (verboseLevel >= 2) Log.i(TAG, "    out FixedOnTouchListener onTouch, returning "+answer);

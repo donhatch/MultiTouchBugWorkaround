@@ -35,6 +35,7 @@ import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.LinearLayout;
+import java.io.FileNotFoundException;
 import java.util.ArrayList;
 import java.util.HashMap;
 
@@ -63,7 +64,7 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
   private Stuff unfixedStuff = new Stuff();
   private Stuff fixedStuff = new Stuff();
 
-  public PaintView(Context context) {
+  public PaintView(final Context context) {
     super(context);
     Log.i(TAG, "    in PaintView ctor");
 
@@ -84,6 +85,29 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
         // which creates a fixed event which is passed
         // to our OnTouchListener's onTouch() above.
         return super.onTouch(view, unfixedEvent);
+      }
+
+      {
+        // This is nuts.
+        //   adb -d shell 'run-as com.example.donhatch.multitouchbugworkaround cat /data/data/com.example.donhatch.multitouchbugworkaround/files/FixedOnTouchListener.trace.txt'
+        // oh wait, this says that risks corruption:
+        //  https://stackoverflow.com/questions/15558353/how-can-one-pull-the-private-data-of-ones-own-android-app/15559278#answer-31504263
+        // So try this instead:
+        //   adb -d shell 'run-as com.example.donhatch.multitouchbugworkaround cp /data/data/com.example.donhatch.multitouchbugworkaround/files/FixedOnTouchListener.trace.txt /mnt/sdcard/FixedOnTouchListener.trace.txt' && adb pull /mnt/sdcard/FixedOnTouchListener.trace.txt
+        Log.i(TAG, "      YOU ARE HERE==============================================================================================================================================================================================================================================================================================================================================");
+        String traceFileName = "FixedOnTouchListener.trace.txt";
+        String traceFilePathNameIThink = context.getFilesDir().getAbsolutePath()+"/"+traceFileName;
+        java.io.FileOutputStream fileOutputStream = null;
+        try {
+          fileOutputStream = context.openFileOutput(traceFileName, 0);
+        } catch (FileNotFoundException e) {
+          throw new AssertionError("coudn't open file output "+traceFilePathNameIThink);
+        }
+        Log.i(TAG, "      setting fix trace fileOutputStream to:  "+traceFilePathNameIThink);
+        java.io.PrintWriter printWriter = new java.io.PrintWriter(fileOutputStream);
+        printWriter.write("hello world\n");
+        printWriter.flush();
+        this.setTracePrintWriter(printWriter);
       }
     });
 
