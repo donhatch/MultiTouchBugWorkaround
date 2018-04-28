@@ -420,7 +420,10 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       return sb.toString();
     }
 
-    public static String dumpString(ArrayList<LogicalMotionEvent> list) {
+    public static String dumpString(ArrayList<LogicalMotionEvent> list,
+                                    String punctuationWhereDifferentFromOther,
+                                    ArrayList<LogicalMotionEvent> other,
+                                    ArrayList<StringBuilder> annotationsOrNull) {
       final int verboseLevel = 0;  // 0: nothing, 1: in/out, 2: some gory details
       if (verboseLevel >= 1) Log.i(TAG, "in LogicalMotionEvent.dumpString("+list.size()+" logical events)");
       StringBuilder answer = new StringBuilder();
@@ -922,7 +925,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           throw new AssertionError(e);
         }
         if (parsed != null) {
-          String dumpStringOut = dumpString(parsed);
+          String dumpStringOut = dumpString(parsed, /*punctuationWhereDifferentFromOther=*/null, /*other=*/null, /*annotationsOrNull=*/null);
 
           Log.i(TAG, "          parseDump succeeded!");
           Log.i(TAG, "          Here's it back out:");
@@ -1221,34 +1224,53 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     }
 
     if (unfixed.getActionMasked() == MotionEvent.ACTION_UP) {
-      if (verboseLevel >= 1) {
-        String unfixedString = LogicalMotionEvent.dumpString(mLogicalMotionEventsSinceFirstDown);
-        String fixedString = LogicalMotionEvent.dumpString(mFixedLogicalMotionEventsSinceFirstDown);
 
-        // TODO: just get rid of this, it's flaky now
-        Log.i(TAG, "      ===============================================================");
-        Log.i(TAG, "      UNFIXED LOGICAL MOTION EVENT SEQUENCE:");
-        LogicalMotionEvent.LogMultiline(TAG, unfixedString);
-        Log.i(TAG, "      ===============================================================");
-        Log.i(TAG, "      ===============================================================");
-        Log.i(TAG, "      FIXED LOGICAL MOTION EVENT SEQUENCE:");
-        LogicalMotionEvent.LogMultiline(TAG, fixedString);
-        Log.i(TAG, "      ===============================================================");
+      if (mTracePrintWriterOrNull != null || verboseLevel >= 1) {
+        String beforeString = LogicalMotionEvent.dumpString(
+          mLogicalMotionEventsSinceFirstDown,
+          /*punctuationWhereDifferentFromOther=*/"?",
+          /*other=*/mFixedLogicalMotionEventsSinceFirstDown,
+          /*annotationsOrNull=*/null);
+        String duringString = LogicalMotionEvent.dumpString(
+          mFixedLogicalMotionEventsSinceFirstDown,
+          /*punctuationWhereDifferentFromOther=*/"!",
+          /*other=*/mLogicalMotionEventsSinceFirstDown,
+          mAnnotationsOrNull);
+        String afterString = LogicalMotionEvent.dumpString(
+          mFixedLogicalMotionEventsSinceFirstDown,
+          /*punctuationWhereDifferentFromOther=*/"!",
+          /*other=*/mLogicalMotionEventsSinceFirstDown,
+          /*annotationsOrNull=*/null);
+
+        if (verboseLevel >= 1) {
+          // TODO: just get rid of this, it's flaky now
+          Log.i(TAG, "      ===============================================================");
+          Log.i(TAG, "      LOGICAL MOTION EVENT SEQUENCE, BEFORE FIX:");
+          LogicalMotionEvent.LogMultiline(TAG, beforeString);
+          Log.i(TAG, "      ---------------------------------------------------------------");
+          Log.i(TAG, "      LOGICAL MOTION EVENT SEQUENCE, DURING FIX:");
+          LogicalMotionEvent.LogMultiline(TAG, duringString);
+          Log.i(TAG, "      ---------------------------------------------------------------");
+          Log.i(TAG, "      LOGICAL MOTION EVENT SEQUENCE, AFTER FIX:");
+          LogicalMotionEvent.LogMultiline(TAG, afterString);
+          Log.i(TAG, "      ===============================================================");
+        }
 
         if (mTracePrintWriterOrNull != null) {
           mTracePrintWriterOrNull.println("      ===============================================================");
           mTracePrintWriterOrNull.println("      LOGICAL MOTION EVENT SEQUENCE, BEFORE FIX:");
-          mTracePrintWriterOrNull.println(unfixedString);
+          mTracePrintWriterOrNull.print(beforeString);  // it ends with newline
           mTracePrintWriterOrNull.println("      ---------------------------------------------------------------");
           mTracePrintWriterOrNull.println("      LOGICAL MOTION EVENT SEQUENCE, DURING FIX:");
-          mTracePrintWriterOrNull.println("      [XXX TBD]");
+          mTracePrintWriterOrNull.print(duringString);  // it ends with newline
           mTracePrintWriterOrNull.println("      ---------------------------------------------------------------");
           mTracePrintWriterOrNull.println("      LOGICAL MOTION EVENT SEQUENCE, AFTER FIX:");
-          mTracePrintWriterOrNull.println(fixedString);
+          mTracePrintWriterOrNull.print(afterString);  // it ends with newline
           mTracePrintWriterOrNull.println("      ===============================================================");
           mTracePrintWriterOrNull.flush();
         }
       }
+
       mLogicalMotionEventsSinceFirstDown.clear();
       mFixedLogicalMotionEventsSinceFirstDown.clear();
     }
