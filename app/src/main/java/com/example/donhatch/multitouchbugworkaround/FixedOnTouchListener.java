@@ -17,6 +17,7 @@
 //          - 0 up
 //          - with 1 moving: 0&2 down simultanously and move.
 //              - id0=0 id1=1
+//              - or all three.  omg.  BAD04
 //          - if it doesn't work, 0&2 up and repeat previous step.
 //      2.
 //          - 0 down
