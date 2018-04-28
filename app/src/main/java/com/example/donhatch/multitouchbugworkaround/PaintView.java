@@ -138,12 +138,12 @@ public class PaintView extends LinearLayout {  // CBB: I wanted android.support.
     final int colors[] = new int[] {
       Color.RED,
       Color.BLUE,
+      0xffc000ff,  // purple, towards magenta
+      Color.MAGENTA,
       0xff00c000,  // not quite so jarring green
-      0xffff8000,  // orange
-      0xff8000ff,  // purple
       Color.YELLOW,
       Color.CYAN,
-      Color.MAGENTA,
+      0xffff8000,  // orange
       Color.BLACK,
       Color.GRAY,
     };

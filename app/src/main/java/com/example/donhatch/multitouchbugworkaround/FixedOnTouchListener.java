@@ -1222,24 +1222,28 @@ public class FixedOnTouchListener implements View.OnTouchListener {
 
     if (unfixed.getActionMasked() == MotionEvent.ACTION_UP) {
       if (verboseLevel >= 1) {
+        String unfixedString = LogicalMotionEvent.dumpString(mLogicalMotionEventsSinceFirstDown);
+        String fixedString = LogicalMotionEvent.dumpString(mFixedLogicalMotionEventsSinceFirstDown);
+
+        // TODO: just get rid of this, it's flaky now
         Log.i(TAG, "      ===============================================================");
         Log.i(TAG, "      UNFIXED LOGICAL MOTION EVENT SEQUENCE:");
-        String unfixedString = LogicalMotionEvent.dumpString(mLogicalMotionEventsSinceFirstDown);
         LogicalMotionEvent.LogMultiline(TAG, unfixedString);
         Log.i(TAG, "      ===============================================================");
         Log.i(TAG, "      ===============================================================");
         Log.i(TAG, "      FIXED LOGICAL MOTION EVENT SEQUENCE:");
-        String fixedString = LogicalMotionEvent.dumpString(mFixedLogicalMotionEventsSinceFirstDown);
         LogicalMotionEvent.LogMultiline(TAG, fixedString);
         Log.i(TAG, "      ===============================================================");
 
         if (mTracePrintWriterOrNull != null) {
           mTracePrintWriterOrNull.println("      ===============================================================");
-          mTracePrintWriterOrNull.println("      UNFIXED LOGICAL MOTION EVENT SEQUENCE:");
+          mTracePrintWriterOrNull.println("      LOGICAL MOTION EVENT SEQUENCE, BEFORE FIX:");
           mTracePrintWriterOrNull.println(unfixedString);
-          mTracePrintWriterOrNull.println("      ===============================================================");
-          mTracePrintWriterOrNull.println("      ===============================================================");
-          mTracePrintWriterOrNull.println("      FIXED LOGICAL MOTION EVENT SEQUENCE:");
+          mTracePrintWriterOrNull.println("      ---------------------------------------------------------------");
+          mTracePrintWriterOrNull.println("      LOGICAL MOTION EVENT SEQUENCE, DURING FIX:");
+          mTracePrintWriterOrNull.println("      [XXX TBD]");
+          mTracePrintWriterOrNull.println("      ---------------------------------------------------------------");
+          mTracePrintWriterOrNull.println("      LOGICAL MOTION EVENT SEQUENCE, AFTER FIX:");
           mTracePrintWriterOrNull.println(fixedString);
           mTracePrintWriterOrNull.println("      ===============================================================");
           mTracePrintWriterOrNull.flush();
