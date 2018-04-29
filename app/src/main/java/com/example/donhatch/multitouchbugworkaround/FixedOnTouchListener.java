@@ -323,6 +323,17 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     }
   }
 
+  // STRINGIFY uses ", ", we want "," instead
+  private static String STRINGIFY_COMPACT(int[] array) {
+    StringBuilder sb = new StringBuilder("{");
+    for (int i = 0; i < array.length; ++i) {
+      if (i != 0) sb.append(",");
+      sb.append(array[i]);
+    }
+    sb.append("}");
+    return sb.toString();
+  }
+
   // To aid analysis.
   private static class LogicalMotionEvent {
     public boolean isHistorical;
@@ -431,17 +442,6 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       }
       if (verboseLevel >= 1) Log.i(TAG, "out PointerCoordsEquals(a, b), returning "+answer);
       return answer;
-    }
-
-    // STRINGIFY uses ", ", we want "," instead
-    public static String STRINGIFY_COMPACT(int[] array) {
-      StringBuilder sb = new StringBuilder("{");
-      for (int i = 0; i < array.length; ++i) {
-        if (i != 0) sb.append(",");
-        sb.append(array[i]);
-      }
-      sb.append("}");
-      return sb.toString();
     }
 
     public static String dumpString(ArrayList<LogicalMotionEvent> list,
@@ -658,7 +658,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                 }
               }
 
-              // Sad way of locating the anchors.
+              // Sad super-expensive way of locating the anchors.
               // Note that we only get this information if we have annotations,
               // whereas it would be nice to get it even in the other two cases.
               if (annotationLine != null) {
@@ -689,11 +689,17 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                   // in which case an anchor was established here.
                   // CBB: this is a twisted way of doing this logic.  is there a cleaner way?
                   Matcher matcher = mStaticJustWentDownPattern.matcher(annotationLine);
-                  if (!matcher.matches()) {
+                  if (!matcher.find()) {
+                    //annotationLine += ("[annotationLine didn't match mStaticJustWentDownMatcher]");
                     matcher = mStaticAlreadyDownPattern.matcher(annotationLine);
-                    if (!matcher.matches()) {
+                    if (!matcher.find()) {
+                      //annotationLine += ("[annotationLine didn't match mStaticAlreadyDownMatcher]");
                       matcher = null;
+                    } else {
+                      //annotationLine += ("[annotationLine matched mStaticAlreadyDownMatcher]");
                     }
+                  } else {
+                    //annotationLine += ("[annotationLine matched mStaticJustWentDownMatcher]");
                   }
                   if (matcher != null) {
                     int idThatJustWentDown = Integer.parseInt(matcher.group(1));
@@ -701,7 +707,6 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                       punc += "@";  // this is the anchor
                     }
                   }
-                  CHECK_EQ(1,2);
                 }
               }
 
@@ -1211,6 +1216,22 @@ NOT BUG:
     { Arrays.fill(mAnchorYs, Float.NaN); }
     { Arrays.fill(mCurrentXs, Float.NaN); }
     { Arrays.fill(mCurrentYs, Float.NaN); }
+    // for debugging.
+    private int[] anchoredIds() {
+      final int[] answer = new int[mNumAnchoredIds];
+      int nFound = 0;
+      for (int id = 0; id < MAX_FINGERS; ++id) {
+        if (!Float.isNaN(mAnchorXs[id])) {
+          CHECK(!Float.isNaN(mAnchorYs[id]));
+          CHECK_LT(nFound, answer.length);
+          answer[nFound++] = id;
+        } else {
+          CHECK(Float.isNaN(mAnchorYs[id]));
+        }
+      }
+      CHECK_EQ(nFound, mNumAnchoredIds);
+      return answer;
+    }
     private void disarmAll() {
       // This can happen from any state
       int numDisarmed = 0;
@@ -1390,12 +1411,13 @@ NOT BUG:
       final float anchorY = pointerCoords[actionIndex].y;
       // This situation is pretty clear, so regardless of previous state, force it to the beginning of ARMING.
       if (mFixerState.mCurrentState != FixerState.STATE_DISARMED) {
+        if (annotationOrNull != null) annotationOrNull.append("(DISARMING PREVIOUSLY ARMED "+STRINGIFY_COMPACT(mFixerState.anchoredIds())+")");
         mFixerState.disarmAll();
       }
       mFixerState.armFirst(whoWasAlreadyDown,
                            whoJustWentDown, 
                            anchorX, anchorY);
-      if (annotationOrNull != null) annotationOrNull.append("(ARMING: "+whoWasAlreadyDown+" was already down, "+whoJustWentDown+" just went down with anchor="+anchorX+","+anchorY);
+      if (annotationOrNull != null) annotationOrNull.append("(ARMING: "+whoWasAlreadyDown+" was already down, "+whoJustWentDown+" just went down with anchor="+anchorX+","+anchorY+")");
     } else if (mCurrentState == STATE_ARMING) {
       if (action == ACTION_POINTER_DOWN) {
         final int whoJustWentDown = unfixed.getPointerId(actionIndex);
@@ -1403,7 +1425,7 @@ NOT BUG:
         final float anchorY = pointerCoords[actionIndex].y;
         mFixerState.armOneMore(whoJustWentDown,
                                anchorX, anchorY);
-        if (annotationOrNull != null) annotationOrNull.append("(ARMING ANOTHER: "+whoJustWentDown+" just went down with anchor="+anchorX+","+anchorY);
+        if (annotationOrNull != null) annotationOrNull.append("(ARMING ANOTHER: "+whoJustWentDown+" just went down with anchor="+anchorX+","+anchorY+")");
       } else if (action == ACTION_MOVE) {
         if (historyIndex == historySize) {  // i.e. this is the "primary" sub-event, not historical
           final int theAlreadyDownIndex = unfixed.findPointerIndex(mFixerState.mTheAlreadyDownOne);
@@ -1411,7 +1433,7 @@ NOT BUG:
           final float anchorX = pointerCoords[theAlreadyDownIndex].x;
           final float anchorY = pointerCoords[theAlreadyDownIndex].x;
           mFixerState.armTheOneWhoWasAlreadyDown(anchorX, anchorY);
-          if (annotationOrNull != null) annotationOrNull.append("(ARMED: theAlreadyDownOne="+mFixerState.mTheAlreadyDownOne+" with anchor="+anchorX+","+anchorY);
+          if (annotationOrNull != null) annotationOrNull.append("(ARMED: theAlreadyDownOne="+mFixerState.mTheAlreadyDownOne+" with anchor="+anchorX+","+anchorY+")");
         } else {
           // We're in a historical sub-event of what may be the arming event.  Do nothing special.
         }
