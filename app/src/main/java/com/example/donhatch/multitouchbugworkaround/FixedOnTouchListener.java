@@ -939,35 +939,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
   }
   private FixerState mFixerState = new FixerState();
 
-
-  /*
-  // (XXX Older more naive version...)
-  // So the states are:
-  private final static int STATE_DISARMED = 0;
-  private final static int STATE_ARMING = 1;
-  private final static int STATE_ARMED = 2;
-  private final static String stateToString(int state) {
-    if (state == STATE_DISARMED) return "DISARMED";
-    if (state == STATE_ARMING) return "ARMING";
-    if (state == STATE_ARMED) return "ARMED";
-    CHECK(false);
-    return null;
-  }
-  // CBB: move this into a "State" sub-object?  Not sure
-  private int mCurrentState = STATE_DISARMED;
-  private int mId0 = -1;  // gets set to the going-down pointer when arming (first event seen)
-  private int mId1 = -1;  // gets set to the already-down pointer when arming (first event seen)
-  private float mAnchor0x = Float.NaN;  // gets set when arming (first event seen)
-  private float mAnchor0y = Float.NaN;  // gets set when arming (first event seen)
-  private float mAnchor1x = Float.NaN;  // gets set when armed (second event seen)
-  private float mAnchor1y = Float.NaN;  // gets set when armed (second event seen)
-  private float mLastKnownGood0x = Float.NaN;  // set any time when armed and id 0 has an x,y that we didn't correct
-  private float mLastKnownGood0y = Float.NaN;  // set any time when armed and id 0 has an x,y that we didn't correct
-  private float mLastKnownGood1x = Float.NaN;  // set any time when armed and mId1 gets an x,y that we didn't correct
-  private float mLastKnownGood1y = Float.NaN;  // set any time when armed and mId1 gets an x,y that we didn't correct
-  */
-
-  private void XXXNEWcorrectPointerCoordsUsingState(
+  private void correctPointerCoordsUsingState(
       MotionEvent unfixed,
       int historyIndex,
       long eventTime,
@@ -975,7 +947,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       ArrayList<String> annotationsOrNull  // if not null, we append one item.
       ) {
     final int verboseLevel = 0;
-    if (verboseLevel >= 1) Log.i(TAG, "        in XXXNEWcorrectPointerCoordsUsingState(historyIndex="+historyIndex+"/"+unfixed.getHistorySize()+", eventTime="+(eventTime-unfixed.getDownTime())/1000.+")  before: "+FixerState.stateToString(mFixerState.mCurrentState));
+    if (verboseLevel >= 1) Log.i(TAG, "        in correctPointerCoordsUsingState(historyIndex="+historyIndex+"/"+unfixed.getHistorySize()+", eventTime="+(eventTime-unfixed.getDownTime())/1000.+")  before: "+FixerState.stateToString(mFixerState.mCurrentState));
 
     StringBuilder annotationOrNull = annotationsOrNull!=null ? new StringBuilder() : null; // CBB: maybe wasteful since most lines don't get annotated
 
@@ -1146,8 +1118,8 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       annotationsOrNull.add(annotationOrNull.toString());
     }
 
-    if (verboseLevel >= 1) Log.i(TAG, "        out XXXNEWcorrectPointerCoordsUsingState(historyIndex="+historyIndex+"/"+unfixed.getHistorySize()+", eventTime="+(eventTime-unfixed.getDownTime())/1000.+")  after: "+FixerState.stateToString(mFixerState.mCurrentState));
-  }  // XXXNEWcorrectPointerCoordsUsingState
+    if (verboseLevel >= 1) Log.i(TAG, "        out correctPointerCoordsUsingState(historyIndex="+historyIndex+"/"+unfixed.getHistorySize()+", eventTime="+(eventTime-unfixed.getDownTime())/1000.+")  after: "+FixerState.stateToString(mFixerState.mCurrentState));
+  }  // correctPointerCoordsUsingState
 
 
   // Framework calls this with the original unfixed MotionEvent;
@@ -1189,7 +1161,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
               CHECK_EQ(mAnnotationsOrNull.size(), mFixedLogicalMotionEventsSinceFirstDown.size() + h);
             }
 
-            XXXNEWcorrectPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords, mAnnotationsOrNull);
+            correctPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords, mAnnotationsOrNull);
 
             if (mAnnotationsOrNull != null) {
               // It must have appended exactly one annotation (possibly null)
