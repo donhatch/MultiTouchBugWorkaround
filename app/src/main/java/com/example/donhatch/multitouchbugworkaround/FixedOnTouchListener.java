@@ -2,12 +2,13 @@
 //
 // https://android-review.googlesource.com/c/platform/frameworks/native/+/640606/
 //
+// TODO: allow querying number-of-bugging-pointers, either via callback or by querying the listener
 // TODO: be able to actually play back the stuff parsed from a dump file:
 //   - be able to convert from LogicalMotionEvent(s) to MotionEvent
 // TODO: dump the gesture if possible when an exception is being thrown?  more generally, when something rare and interesting happens that I want to trace
 // TODO: investigate whether I can get ACTION_CANCEL and/or ACTION_OUTSIDE.
 
-// BUG: I'm setting tryTheStationaryTest=false now because it just doesn't seem to be reliable... but now I'm getting spurious non-corrections sometimes?  Argh!
+// BUG: I'm setting tryTheStationaryTest=false now because it just doesn't seem to be reliable... that sucks :-(
 
 package com.example.donhatch.multitouchbugworkaround;
 
@@ -1041,7 +1042,8 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             pointerCoords[index].x = mFixerState.mCurrentXs[id];
             pointerCoords[index].y = mFixerState.mCurrentYs[id];
           } else {
-            final boolean tryTheStationaryTest = false;  // Argh!  Is it simply unreliable?  Examples (one was 3-pointer, the other was simply 2-pointer):
+            final boolean tryTheStationaryTest = true;
+            // Argh!  Is it simply unreliable?  Examples (one was 3-pointer, the other was simply 2-pointer):
 /*
 ------
           2.297  476/1287:           MOVE   {0,1}  0:[1008.64978,784.455200]A?  1:[1964.19446,892.755249]B?
@@ -1071,6 +1073,11 @@ public class FixedOnTouchListener implements View.OnTouchListener {
          19.800 4291/5135:                  {0,1}    0:[1478.48669,153.893127]A   1:[1709.40649,481.665497]A?
 ------
 */
+            // IDEA: I notice this false alarm always seems to be history-less, which is actually unusual... is that a reliable indicator?
+            //       In fact, the event looks completely identical to the (primary of the) previous event??
+            //       That's pretty strange indeed.
+            // Okay, that seems to work.  TODO: Clean this up at some point.
+            boolean trySuperSmartFalseAlarmProtection = true;
 
             if (tryTheStationaryTest) {
               if (pointerCoords[index].x == mFixerState.mCurrentXs[id]
@@ -1089,8 +1096,10 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                 //    CBB: I'm not sure how to completely characterize this situation,
                 //    but I'll err on the side of assuming it's still bugging (when really not bugging,
                 //    we'll get evidence of not bugging soon enough anyway).
-                if (action != ACTION_UP && action != ACTION_MOVE) {
+                if (action != ACTION_UP && action != ACTION_MOVE) {  // i.e. exoneration can only happen on MOVE or UP
                   if (annotationOrNull != null) annotationOrNull.append("(NOT DISARMING id "+id+" on rogue stay-the-same at non-anchor on action="+actionToString(action)+"("+actionId+")");
+                } else if (trySuperSmartFalseAlarmProtection && action == ACTION_MOVE && historySize == 0) {
+                  if (annotationOrNull != null) annotationOrNull.append("(NOT DISARMING id "+id+" on rogue stay-the-same at non-anchor because it's a history-less MOVE which I think means false alarm)");
                 } else {
                   if (annotationOrNull != null) annotationOrNull.append("(DISARMING id "+id+" because it stayed the same and is *not* the anchor "+mFixerState.mAnchorXs[id]+","+mFixerState.mAnchorYs[id]+".  I think bug isn't happening here (or isn't happening any more here))");
                   mFixerState.disarmOne(id);

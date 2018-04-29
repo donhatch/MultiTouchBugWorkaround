@@ -9,6 +9,9 @@
 adb exec-out "run-as com.example.donhatch.multitouchbugworkaround cat /data/user/0/com.example.donhatch.multitouchbugworkaround/files/FixedOnTouchListener.trace.txt"
 adb exec-out "run-as com.example.donhatch.multitouchbugworkaround tail -1000000 -f /data/user/0/com.example.donhatch.multitouchbugworkaround/files/FixedOnTouchListener.trace.txt"
 I think that only works when it's a debug app, though.
+
+Screenshot:
+     adb exec-out "screencap -p" > foo.png
 */
 
 package com.example.donhatch.multitouchbugworkaround;
