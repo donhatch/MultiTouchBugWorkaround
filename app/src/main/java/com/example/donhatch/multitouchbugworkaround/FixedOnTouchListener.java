@@ -1029,84 +1029,91 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         mFixerState.disarmAll();
       }
     } else if (mFixerState.mCurrentState == FixerState.STATE_ARMED) {  // i.e. if was already armed (not just now got armed)
-      if ((action == ACTION_POINTER_UP || action == ACTION_UP)
-       && !Float.isNaN(mFixerState.mAnchorXs[actionId])) {
-        if (annotationOrNull != null) annotationOrNull.append("(DISARMING id "+actionId+" on "+actionToString(action)+")");
-        mFixerState.disarmOne(actionId);
-      } else {
-        for (int index = 0; index < pointerCount; ++index) {
-          final int id = unfixed.getPointerId(index);
-          if (!Float.isNaN(mFixerState.mAnchorXs[id])) {
-            // This id is currently believed to be bugging.
-            if (pointerCoords[index].x == mFixerState.mAnchorXs[id]
-             && pointerCoords[index].y == mFixerState.mAnchorYs[id]) {
-              // The pointer moved to (or stayed still at) its anchor.
-              // That's what happens when it meant to stay at its current position.
-              // Correct it.
-              pointerCoords[index].x = mFixerState.mCurrentXs[id];
-              pointerCoords[index].y = mFixerState.mCurrentYs[id];
-            } else {
-              final boolean tryTheStationaryTest = false;  // Argh!  Is it simply unreliable?  Examples (one was 3-pointer, the other was simply 2-pointer):
+      for (int index = 0; index < pointerCount; ++index) {
+        final int id = unfixed.getPointerId(index);
+        if (!Float.isNaN(mFixerState.mAnchorXs[id])) {
+          // This id is currently believed to be bugging.
+          if (pointerCoords[index].x == mFixerState.mAnchorXs[id]
+           && pointerCoords[index].y == mFixerState.mAnchorYs[id]) {
+            // The pointer moved to (or stayed still at) its anchor.
+            // That's what happens when it meant to stay at its current position.
+            // Correct it.
+            pointerCoords[index].x = mFixerState.mCurrentXs[id];
+            pointerCoords[index].y = mFixerState.mCurrentYs[id];
+          } else {
+            final boolean tryTheStationaryTest = false;  // Argh!  Is it simply unreliable?  Examples (one was 3-pointer, the other was simply 2-pointer):
 /*
 ------
-            2.297  476/1287:           MOVE   {0,1}  0:[1008.64978,784.455200]A?  1:[1964.19446,892.755249]B?
-            2.307  477/1287:                  {0,1}  0:[1008.64978,784.455200]A?  1: 1582.45056,756.474670
-            2.307  478/1287:           MOVE   {0,1}  0:[1008.64978,784.455200]A?  1: 1964.19446,892.755249 B?
-            2.318  479/1287:                  {0,1}  0: 708.753906,860.402466     1:[1964.19446,892.755249]B?
-            2.318  480/1287:                  {0,1}  0: 1008.64978,784.455200 A?  1: 1583.45020,757.473938
-            2.318  481/1287:                  {0,1}  0:[1008.64978,784.455200]A?  1: 1964.19446,892.755249 B?
-            2.329  482/1287:           MOVE   {0,1}  0:[1008.64978,784.455200]A?  1: 1585.44958,760.471863
-            2.329  483/1287:           MOVE   {0,1}  0:[1008.64978,784.455200]A?  1:[1585.44958,760.471863]
+          2.297  476/1287:           MOVE   {0,1}  0:[1008.64978,784.455200]A?  1:[1964.19446,892.755249]B?
+          2.307  477/1287:                  {0,1}  0:[1008.64978,784.455200]A?  1: 1582.45056,756.474670
+          2.307  478/1287:           MOVE   {0,1}  0:[1008.64978,784.455200]A?  1: 1964.19446,892.755249 B?
+          2.318  479/1287:                  {0,1}  0: 708.753906,860.402466     1:[1964.19446,892.755249]B?
+          2.318  480/1287:                  {0,1}  0: 1008.64978,784.455200 A?  1: 1583.45020,757.473938
+          2.318  481/1287:                  {0,1}  0:[1008.64978,784.455200]A?  1: 1964.19446,892.755249 B?
+          2.329  482/1287:           MOVE   {0,1}  0:[1008.64978,784.455200]A?  1: 1585.44958,760.471863
+          2.329  483/1287:           MOVE   {0,1}  0:[1008.64978,784.455200]A?  1:[1585.44958,760.471863]
 (DISARMING id 1 because it stayed the same and is *not* the anchor 1964.1945,892.75525.  I think bug isn't happening here (or isn't happening any more here))
-            2.338  484/1287:                  {0,1}  0:(1008.64978,784.455200)A?  1: 1964.19446,892.755249 B
-            2.338  485/1287:           MOVE   {0,1}  0:[1008.64978,784.455200]A?  1: 1587.44885,763.469788
-            2.348  486/1287:                  {0,1}  0:(1008.64978,784.455200)A?  1: 1964.19446,892.755249 B
-            2.348  487/1287:                  {0,1}  0:[1008.64978,784.455200]A?  1: 1590.44775,768.466309
-            2.357  488/1287:                  {0,1}  0:(1008.64978,784.455200)A?  1: 1964.19446,892.755249 B
+          2.338  484/1287:                  {0,1}  0:(1008.64978,784.455200)A?  1: 1964.19446,892.755249 B
+          2.338  485/1287:           MOVE   {0,1}  0:[1008.64978,784.455200]A?  1: 1587.44885,763.469788
+          2.348  486/1287:                  {0,1}  0:(1008.64978,784.455200)A?  1: 1964.19446,892.755249 B
+          2.348  487/1287:                  {0,1}  0:[1008.64978,784.455200]A?  1: 1590.44775,768.466309
+          2.357  488/1287:                  {0,1}  0:(1008.64978,784.455200)A?  1: 1964.19446,892.755249 B
 ------
-           19.748 4283/5135:                  {0,1}    0:[1478.48669,153.893127]A?  1:[1709.40649,481.665497]A?
-           19.758 4284/5135:                  {0,1}    0:(1478.48669,153.893127)A?  1:[1709.40649,481.665497]A?
-           19.769 4285/5135:                  {0,1}    0:(1478.48669,153.893127)A?  1:[1709.40649,481.665497]A?
-           19.779 4286/5135:           MOVE   {0,1}    0: 403.859772,487.661346     1:[1709.40649,481.665497]A?
-           19.779 4287/5135:           MOVE   {0,1}    0:[403.859772,487.661346]    1:[1709.40649,481.665497]A?
+         19.748 4283/5135:                  {0,1}    0:[1478.48669,153.893127]A?  1:[1709.40649,481.665497]A?
+         19.758 4284/5135:                  {0,1}    0:(1478.48669,153.893127)A?  1:[1709.40649,481.665497]A?
+         19.769 4285/5135:                  {0,1}    0:(1478.48669,153.893127)A?  1:[1709.40649,481.665497]A?
+         19.779 4286/5135:           MOVE   {0,1}    0: 403.859772,487.661346     1:[1709.40649,481.665497]A?
+         19.779 4287/5135:           MOVE   {0,1}    0:[403.859772,487.661346]    1:[1709.40649,481.665497]A?
 (DISARMING id 0 because it stayed the same and is *not* the anchor 1478.4867,153.89313.  I think bug isn't happening here (or isn't happening any more here))
-           19.789 4288/5135:                  {0,1}    0: 404.859436,489.659943     1:[1709.40649,481.665497]A?
-           19.789 4289/5135:                  {0,1}    0: 1478.48669,153.893127 A   1:[1709.40649,481.665497]A?
-           19.800 4290/5135:                  {0,1}    0:(1478.48669,153.893127)A   1:[1709.40649,481.665497]A?
-           19.800 4291/5135:                  {0,1}    0:[1478.48669,153.893127]A   1:[1709.40649,481.665497]A?
+         19.789 4288/5135:                  {0,1}    0: 404.859436,489.659943     1:[1709.40649,481.665497]A?
+         19.789 4289/5135:                  {0,1}    0: 1478.48669,153.893127 A   1:[1709.40649,481.665497]A?
+         19.800 4290/5135:                  {0,1}    0:(1478.48669,153.893127)A   1:[1709.40649,481.665497]A?
+         19.800 4291/5135:                  {0,1}    0:[1478.48669,153.893127]A   1:[1709.40649,481.665497]A?
 ------
 */
 
-              if (tryTheStationaryTest) {
-                if (pointerCoords[index].x == mFixerState.mCurrentXs[id]
-                 && pointerCoords[index].y == mFixerState.mCurrentYs[id]) {
-                  // The pointer stayed the same, at an x,y that is *not* the anchor.
-                  // The bug is not happening at this id (since, when the bug is happening at this id,
-                  // staying the same always gets botched into moving to the anchor).
-                  // CBB: in some cases, particularly in simple cases involving only 2 pointers, we could now decide the bug wasn't happening at all, and move all the way to DISARMED at this point.  Is that important?  Maybe not.
-                  //
-                  // Exception: I've seen a rogue stay-the-same-that's-not-the-anchor in the following situation (BAD05):
-                  //    1 was moving
-                  //    0&2 down simultaneously, but only 0&1 started bugging
-                  //    in fact, the 2 down happened later enough that we were alreadly armed and correctly fixing id 1
-                  //    (this happened to be the last stationary of id 0's down).
-                  //    on that 2 down, the 1 did a rogue stay-the-same-that's-not-the-anchor.
-                  //    CBB: I'm not sure how to completely characterize this situation,
-                  //    but I'll err on the side of assuming it's still bugging (when really not bugging,
-                  //    we'll get evidence of not bugging soon enough anyway).
-                  if (action != ACTION_UP && action != ACTION_MOVE) {
-                    if (annotationOrNull != null) annotationOrNull.append("(NOT DISARMING id "+id+" on rogue stay-the-same at non-anchor on action="+actionToString(action)+"("+actionId+")");
-                  } else {
-                    if (annotationOrNull != null) annotationOrNull.append("(DISARMING id "+id+" because it stayed the same and is *not* the anchor "+mFixerState.mAnchorXs[id]+","+mFixerState.mAnchorYs[id]+".  I think bug isn't happening here (or isn't happening any more here))");
-                    mFixerState.disarmOne(id);
-                  }
+            if (tryTheStationaryTest) {
+              if (pointerCoords[index].x == mFixerState.mCurrentXs[id]
+               && pointerCoords[index].y == mFixerState.mCurrentYs[id]) {
+                // The pointer stayed the same, at an x,y that is *not* the anchor.
+                // The bug is not happening at this id (since, when the bug is happening at this id,
+                // staying the same always gets botched into moving to the anchor).
+                // CBB: in some cases, particularly in simple cases involving only 2 pointers, we could now decide the bug wasn't happening at all, and move all the way to DISARMED at this point.  Is that important?  Maybe not.
+                //
+                // Exception: I've seen a rogue stay-the-same-that's-not-the-anchor in the following situation (BAD05):
+                //    1 was moving
+                //    0&2 down simultaneously, but only 0&1 started bugging
+                //    in fact, the 2 down happened later enough that we were alreadly armed and correctly fixing id 1
+                //    (this happened to be the last stationary of id 0's down).
+                //    on that 2 down, the 1 did a rogue stay-the-same-that's-not-the-anchor.
+                //    CBB: I'm not sure how to completely characterize this situation,
+                //    but I'll err on the side of assuming it's still bugging (when really not bugging,
+                //    we'll get evidence of not bugging soon enough anyway).
+                if (action != ACTION_UP && action != ACTION_MOVE) {
+                  if (annotationOrNull != null) annotationOrNull.append("(NOT DISARMING id "+id+" on rogue stay-the-same at non-anchor on action="+actionToString(action)+"("+actionId+")");
+                } else {
+                  if (annotationOrNull != null) annotationOrNull.append("(DISARMING id "+id+" because it stayed the same and is *not* the anchor "+mFixerState.mAnchorXs[id]+","+mFixerState.mAnchorYs[id]+".  I think bug isn't happening here (or isn't happening any more here))");
+                  mFixerState.disarmOne(id);
                 }
               }
             }
           }
         }
       }
+
+      // Subtlety: when ARMED and one of the participating ids goes UP or POINTER_UP,
+      // the bug may affect the coords of the UP event!  So we have to
+      // do this in the right order:  correct first (which we just did),
+      // and *then* remove it from the believed-to-be-bugging set
+      // (which may actually set state to DISARMED, if this was the last one).
+      if ((action == ACTION_POINTER_UP || action == ACTION_UP)
+       && !Float.isNaN(mFixerState.mAnchorXs[actionId])) {
+        if (annotationOrNull != null) annotationOrNull.append("(DISARMING id "+actionId+" on "+actionToString(action)+")");
+        mFixerState.disarmOne(actionId);
+      }
+
     }  // mFixerState.mCurrentState == FixerState.STATE_ARMED
+
 
     if (mFixerState.mCurrentState != FixerState.STATE_DISARMED) {
       // Remember all current coords (original or corrected)
