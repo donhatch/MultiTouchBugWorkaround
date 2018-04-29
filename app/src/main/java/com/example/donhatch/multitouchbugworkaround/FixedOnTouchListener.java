@@ -684,12 +684,16 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                       punc += "@";
                     }
                   }
-                } else {
+                } else if (true) {
                   // Extract <id> from "<id> just went down" or "ARMED: theAlreadyDownOne=<id>" if any,
                   // in which case an anchor was established here.
+                  // CBB: this is a twisted way of doing this logic.  is there a cleaner way?
                   Matcher matcher = mStaticJustWentDownPattern.matcher(annotationLine);
-                  if (matcher == null) {
+                  if (!matcher.matches()) {
                     matcher = mStaticAlreadyDownPattern.matcher(annotationLine);
+                    if (!matcher.matches()) {
+                      matcher = null;
+                    }
                   }
                   if (matcher != null) {
                     int idThatJustWentDown = Integer.parseInt(matcher.group(1));
@@ -697,6 +701,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                       punc += "@";  // this is the anchor
                     }
                   }
+                  CHECK_EQ(1,2);
                 }
               }
 
@@ -1623,123 +1628,141 @@ NOT BUG:
     final int verboseLevel = 1;  // 0: nothing, 1: dump entire sequence on final UP, 2: and in/out
     if (verboseLevel >= 2) Log.i(TAG, "    in FixedOnTouchListener onTouch");
 
-    LogicalMotionEvent.breakDown(unfixed, mLogicalMotionEventsSinceFirstDown);  // for post-mortem analysis
+    try {
 
-    boolean answer = false;
-    {
-      final int pointerCount = unfixed.getPointerCount();
-      final int historySize = unfixed.getHistorySize();
+      LogicalMotionEvent.breakDown(unfixed, mLogicalMotionEventsSinceFirstDown);  // for post-mortem analysis
 
-      final MotionEvent.PointerProperties[] pointerProperties = new MotionEvent.PointerProperties[pointerCount];  // CBB: reuse
-      for (int index = 0; index < pointerCount; ++index) {
-        pointerProperties[index] = new MotionEvent.PointerProperties();
-        unfixed.getPointerProperties(index, pointerProperties[index]);
-      }
+      boolean answer = false;
+      {
+        final int pointerCount = unfixed.getPointerCount();
+        final int historySize = unfixed.getHistorySize();
 
-      final MotionEvent.PointerCoords[] pointerCoords = new MotionEvent.PointerCoords[pointerCount];  // CBB: reuse
-      MotionEvent fixed = null;
-      try {
-        for (int h = 0; h < historySize+1; ++h) {
-          for (int index = 0; index < pointerCount; ++index) {
-            pointerCoords[index] = new MotionEvent.PointerCoords();
-            if (h==historySize) {
-              unfixed.getPointerCoords(index, pointerCoords[index]);
+        final MotionEvent.PointerProperties[] pointerProperties = new MotionEvent.PointerProperties[pointerCount];  // CBB: reuse
+        for (int index = 0; index < pointerCount; ++index) {
+          pointerProperties[index] = new MotionEvent.PointerProperties();
+          unfixed.getPointerProperties(index, pointerProperties[index]);
+        }
+
+        final MotionEvent.PointerCoords[] pointerCoords = new MotionEvent.PointerCoords[pointerCount];  // CBB: reuse
+        MotionEvent fixed = null;
+        try {
+          for (int h = 0; h < historySize+1; ++h) {
+            for (int index = 0; index < pointerCount; ++index) {
+              pointerCoords[index] = new MotionEvent.PointerCoords();
+              if (h==historySize) {
+                unfixed.getPointerCoords(index, pointerCoords[index]);
+              } else {
+                unfixed.getHistoricalPointerCoords(index, h, pointerCoords[index]);
+              }
+            }
+            long subEventTime = h==historySize ? unfixed.getEventTime() : unfixed.getHistoricalEventTime(h);
+            if (mAnnotationsOrNull != null) {
+              CHECK_EQ(mAnnotationsOrNull.size(), mFixedLogicalMotionEventsSinceFirstDown.size() + h);
+            }
+
+            //correctPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords, mAnnotationsOrNull);
+            XXXNEWcorrectPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords, mAnnotationsOrNull);
+
+            if (mAnnotationsOrNull != null) {
+              // It must have appended exactly one annotation (possibly null)
+              CHECK_EQ(mAnnotationsOrNull.size(), mFixedLogicalMotionEventsSinceFirstDown.size() + h + 1);
+            }
+            int historicalMetaState = unfixed.getMetaState(); // huh? this can't be right, but I don't see any way to query metaState per-history
+            if (h == 0) {
+              fixed = MotionEvent.obtain(
+                  unfixed.getDownTime(),
+                  subEventTime,
+                  unfixed.getAction(),
+                  pointerCount,
+                  pointerProperties,
+                  pointerCoords,
+                  historicalMetaState,
+                  unfixed.getButtonState(),
+                  unfixed.getXPrecision(),
+                  unfixed.getYPrecision(),
+                  unfixed.getDeviceId(),
+                  unfixed.getEdgeFlags(),
+                  unfixed.getSource(),
+                  unfixed.getFlags());
+              // Make sure we got some of the tricky ones right...
+              CHECK_EQ(fixed.getAction(), unfixed.getAction());
+              CHECK_EQ(fixed.getActionMasked(), unfixed.getActionMasked());
+              CHECK_EQ(fixed.getActionIndex(), unfixed.getActionIndex());
             } else {
-              unfixed.getHistoricalPointerCoords(index, h, pointerCoords[index]);
+              fixed.addBatch(subEventTime,
+                             pointerCoords,
+                             historicalMetaState);
             }
           }
-          long subEventTime = h==historySize ? unfixed.getEventTime() : unfixed.getHistoricalEventTime(h);
-          if (mAnnotationsOrNull != null) {
-            CHECK_EQ(mAnnotationsOrNull.size(), mFixedLogicalMotionEventsSinceFirstDown.size() + h);
+          LogicalMotionEvent.breakDown(fixed, mFixedLogicalMotionEventsSinceFirstDown);  // for post-mortem analysis
+          answer = wrapped.onTouch(view, fixed);
+        } finally {
+          if (fixed != null) {
+            fixed.recycle();
           }
-
-          //correctPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords, mAnnotationsOrNull);
-          XXXNEWcorrectPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords, mAnnotationsOrNull);
-
-          if (mAnnotationsOrNull != null) {
-            // It must have appended exactly one annotation (possibly null)
-            CHECK_EQ(mAnnotationsOrNull.size(), mFixedLogicalMotionEventsSinceFirstDown.size() + h + 1);
-          }
-          int historicalMetaState = unfixed.getMetaState(); // huh? this can't be right, but I don't see any way to query metaState per-history
-          if (h == 0) {
-            fixed = MotionEvent.obtain(
-                unfixed.getDownTime(),
-                subEventTime,
-                unfixed.getAction(),
-                pointerCount,
-                pointerProperties,
-                pointerCoords,
-                historicalMetaState,
-                unfixed.getButtonState(),
-                unfixed.getXPrecision(),
-                unfixed.getYPrecision(),
-                unfixed.getDeviceId(),
-                unfixed.getEdgeFlags(),
-                unfixed.getSource(),
-                unfixed.getFlags());
-            // Make sure we got some of the tricky ones right...
-            CHECK_EQ(fixed.getAction(), unfixed.getAction());
-            CHECK_EQ(fixed.getActionMasked(), unfixed.getActionMasked());
-            CHECK_EQ(fixed.getActionIndex(), unfixed.getActionIndex());
-          } else {
-            fixed.addBatch(subEventTime,
-                           pointerCoords,
-                           historicalMetaState);
-          }
-        }
-        LogicalMotionEvent.breakDown(fixed, mFixedLogicalMotionEventsSinceFirstDown);  // for post-mortem analysis
-        answer = wrapped.onTouch(view, fixed);
-      } finally {
-        if (fixed != null) {
-          fixed.recycle();
         }
       }
-    }
 
-    if (unfixed.getActionMasked() == ACTION_UP) {
-
-      if (mTracePrintWriterOrNull != null || verboseLevel >= 1) {
-        String beforeString = LogicalMotionEvent.dumpString(
-          mLogicalMotionEventsSinceFirstDown,
-          /*punctuationWhereDifferentFromOther=*/"?",
-          /*other=*/mFixedLogicalMotionEventsSinceFirstDown,
-          /*annotationsOrNull=*/null);
-        String duringString = LogicalMotionEvent.dumpString(
-          mLogicalMotionEventsSinceFirstDown,
-          /*punctuationWhereDifferentFromOther=*/"?",
-          /*other=*/mFixedLogicalMotionEventsSinceFirstDown,
-          mAnnotationsOrNull);
-        String afterString = LogicalMotionEvent.dumpString(
-          mFixedLogicalMotionEventsSinceFirstDown,
-          /*punctuationWhereDifferentFromOther=*/"!",
-          /*other=*/mLogicalMotionEventsSinceFirstDown,
-          /*annotationsOrNull=*/null);
+      if (unfixed.getActionMasked() == ACTION_UP) {
 
         if (mTracePrintWriterOrNull != null) {
-          mTracePrintWriterOrNull.println("      ===============================================================");
-          mTracePrintWriterOrNull.println("      LOGICAL MOTION EVENT SEQUENCE, BEFORE FIX:");
-          mTracePrintWriterOrNull.print(beforeString);  // it ends with newline
-          mTracePrintWriterOrNull.println("      ---------------------------------------------------------------");
-          mTracePrintWriterOrNull.println("      LOGICAL MOTION EVENT SEQUENCE, DURING FIX:");
-          mTracePrintWriterOrNull.print(duringString);  // it ends with newline
-          mTracePrintWriterOrNull.println("      ---------------------------------------------------------------");
-          mTracePrintWriterOrNull.println("      LOGICAL MOTION EVENT SEQUENCE, AFTER FIX:");
-          mTracePrintWriterOrNull.print(afterString);  // it ends with newline
-          mTracePrintWriterOrNull.println("      ===============================================================");
-          mTracePrintWriterOrNull.flush();
+          String beforeString = LogicalMotionEvent.dumpString(
+            mLogicalMotionEventsSinceFirstDown,
+            /*punctuationWhereDifferentFromOther=*/"?",
+            /*other=*/mFixedLogicalMotionEventsSinceFirstDown,
+            /*annotationsOrNull=*/null);
+          String duringString = LogicalMotionEvent.dumpString(
+            mLogicalMotionEventsSinceFirstDown,
+            /*punctuationWhereDifferentFromOther=*/"?",
+            /*other=*/mFixedLogicalMotionEventsSinceFirstDown,
+            mAnnotationsOrNull);
+          String afterString = LogicalMotionEvent.dumpString(
+            mFixedLogicalMotionEventsSinceFirstDown,
+            /*punctuationWhereDifferentFromOther=*/"!",
+            /*other=*/mLogicalMotionEventsSinceFirstDown,
+            /*annotationsOrNull=*/null);
+
+          if (mTracePrintWriterOrNull != null) {
+            mTracePrintWriterOrNull.println("      ===============================================================");
+            mTracePrintWriterOrNull.println("      LOGICAL MOTION EVENT SEQUENCE, BEFORE FIX:");
+            mTracePrintWriterOrNull.print(beforeString);  // it ends with newline
+            mTracePrintWriterOrNull.println("      ---------------------------------------------------------------");
+            mTracePrintWriterOrNull.println("      LOGICAL MOTION EVENT SEQUENCE, DURING FIX:");
+            mTracePrintWriterOrNull.print(duringString);  // it ends with newline
+            mTracePrintWriterOrNull.println("      ---------------------------------------------------------------");
+            mTracePrintWriterOrNull.println("      LOGICAL MOTION EVENT SEQUENCE, AFTER FIX:");
+            mTracePrintWriterOrNull.print(afterString);  // it ends with newline
+            mTracePrintWriterOrNull.println("      ===============================================================");
+            mTracePrintWriterOrNull.flush();
+          }
+          if (mAnnotationsOrNull != null) {
+            mAnnotationsOrNull.clear();
+          }
         }
-        if (mAnnotationsOrNull != null) {
-          mAnnotationsOrNull.clear();
+
+        mLogicalMotionEventsSinceFirstDown.clear();
+        mFixedLogicalMotionEventsSinceFirstDown.clear();
+
+      }
+      if (verboseLevel >= 2) Log.i(TAG, "    out FixedOnTouchListener onTouch, returning "+answer);
+      return answer;
+    } catch (Throwable throwable) {
+      if (mTracePrintWriterOrNull != null) {
+        // Highest priority is to re-throw,
+        // so don't allow additional throws inside printStackTrace to thwart us.
+        try {
+          mTracePrintWriterOrNull.println("===========================================");
+          mTracePrintWriterOrNull.println("Oh no!  FixedOnTouchListener.onTouch caught this:");
+          throwable.printStackTrace(mTracePrintWriterOrNull);
+          mTracePrintWriterOrNull.println("===========================================");
+          mTracePrintWriterOrNull.flush();
+        } catch (Throwable throwable2) {
+          Log.i(TAG, "FixedOnTouchListener.onTouch: what the hell? caught while trying to print stack trace to trace print writer: throwable2");
         }
       }
-
-      mLogicalMotionEventsSinceFirstDown.clear();
-      mFixedLogicalMotionEventsSinceFirstDown.clear();
-
+      Log.i(TAG, "FixedOnTouchListener.onTouch caught exception "+throwable+", re-throwing");
+      throw throwable;
     }
-
-    if (verboseLevel >= 2) Log.i(TAG, "    out FixedOnTouchListener onTouch, returning "+answer);
-    return answer;
   }  // onTouch
 }
 
