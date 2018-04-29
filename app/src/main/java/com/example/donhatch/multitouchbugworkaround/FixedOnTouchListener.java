@@ -658,33 +658,48 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                 }
               }
 
-
               // Sad way of locating the anchors.
               // Note that we only get this information if we have annotations,
               // whereas it would be nice to get it even in the other two cases.
               if (annotationLine != null) {
-                if (annotationLine.startsWith("(ARMING:")) {
-                  int id0start = annotationLine.indexOf("id0=");
-                  CHECK_NE(id0start, -1);
-                  id0start += 4;
-                  final int id0end = annotationLine.indexOf(" ", id0start);
-                  CHECK_NE(id0end, -1);
-                  final int id0 = Integer.parseInt(annotationLine.substring(id0start, id0end));
-                  if (id0 == id) {
-                    punc += "@";
+                if (false) {  // old way
+                  if (annotationLine.startsWith("(ARMING:")) {
+                    int id0start = annotationLine.indexOf("id0=");
+                    CHECK_NE(id0start, -1);
+                    id0start += 4;
+                    final int id0end = annotationLine.indexOf(" ", id0start);
+                    CHECK_NE(id0end, -1);
+                    final int id0 = Integer.parseInt(annotationLine.substring(id0start, id0end));
+                    if (id0 == id) {
+                      punc += "@";
+                    }
+                  } else if (annotationLine.startsWith("(ARMED:")) {
+                    int id1start = annotationLine.indexOf("id1=");
+                    CHECK_NE(id1start, -1);
+                    id1start += 4;
+                    final int id1end = annotationLine.indexOf(" ", id1start);
+                    CHECK_NE(id1end, -1);
+                    final int id1 = Integer.parseInt(annotationLine.substring(id1start, id1end));
+                    if (id1 == id) {
+                      punc += "@";
+                    }
                   }
-                } else if (annotationLine.startsWith("(ARMED:")) {
-                  int id1start = annotationLine.indexOf("id1=");
-                  CHECK_NE(id1start, -1);
-                  id1start += 4;
-                  final int id1end = annotationLine.indexOf(" ", id1start);
-                  CHECK_NE(id1end, -1);
-                  final int id1 = Integer.parseInt(annotationLine.substring(id1start, id1end));
-                  if (id1 == id) {
-                    punc += "@";
+                } else {
+                  // Extract <id> from "<id> just went down" or "ARMED: theAlreadyDownOne=<id>" if any,
+                  // in which case an anchor was established here.
+                  Matcher matcher = mStaticJustWentDownPattern.matcher(annotationLine);
+                  if (matcher == null) {
+                    matcher = mStaticAlreadyDownPattern.matcher(annotationLine);
+                  }
+                  if (matcher != null) {
+                    int idThatJustWentDown = Integer.parseInt(matcher.group(1));
+                    if (idThatJustWentDown == id) {
+                      punc += "@";  // this is the anchor
+                    }
                   }
                 }
               }
+
               coordsString += (punc.length()==0 ? " " : punc);
             }
 
@@ -701,8 +716,11 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       if (verboseLevel >= 1) Log.i(TAG, "out LogicalMotionEvent.dumpString("+list.size()+" logical events)");
       return answer.toString();
     }  // dump
+    final static Pattern mStaticJustWentDownPattern = Pattern.compile(" (\\d+) just went down");  // fragile
+    final static Pattern mStaticAlreadyDownPattern = Pattern.compile("ARMED: theAlreadyDownOne=(\\d+)");  // very fragile
 
     // Argh!  Calling Log.i on the multiline dump string causes it to be truncated *very* early (like, dozens instead of hundreds).
+    // So don't do that; split it, instead.
     public static void LogMultiline(String tag, String s) {
       for (String line : s.split("\n")) {
         Log.i(tag, line);
@@ -1209,6 +1227,7 @@ NOT BUG:
       CHECK_EQ(numDisarmed, mNumAnchoredIds);
       mNumAnchoredIds = 0;
       mTheAlreadyDownOne = -1;
+      mCurrentState = STATE_DISARMED;
     }
     private void armFirst(int whoWasAlreadyDown, int whoJustWentDown, float anchorX, float anchorY) {
       CHECK_EQ(mCurrentState, STATE_DISARMED);
@@ -1347,8 +1366,6 @@ NOT BUG:
       ) {
     final int verboseLevel = 0;
     if (verboseLevel >= 1) Log.i(TAG, "        in XXXNEWcorrectPointerCoordsUsingState(historyIndex="+historyIndex+"/"+unfixed.getHistorySize()+", eventTime="+(eventTime-unfixed.getDownTime())/1000.+")  before: "+stateToString(mCurrentState));
-    if (verboseLevel >= 1) Log.i(TAG, "          before: id0="+mId0+" id1="+mId1+" anchor0="+mAnchor0x+","+mAnchor0y+" anchor1="+mAnchor1x+","+mAnchor1y+" lkg0="+mLastKnownGood0x+","+mLastKnownGood0y+" lkg1="+mLastKnownGood1x+","+mLastKnownGood1y+"");
-    CHECK(false); // XXX FIX PREVIOUS MESSAGE
 
     StringBuilder annotationOrNull = annotationsOrNull!=null ? new StringBuilder() : null; // CBB: maybe wasteful since most lines don't get annotated
 
@@ -1356,10 +1373,6 @@ NOT BUG:
     final int actionIndex = unfixed.getActionIndex();
     final int pointerCount = unfixed.getPointerCount();
     final int historySize = unfixed.getHistorySize();
-
-    if (annotationsOrNull != null) {
-      annotationsOrNull.add(annotationOrNull.toString());
-    }
 
     // No matter what state we're in,
     // if we see the first event of the arming sequence,
@@ -1370,10 +1383,14 @@ NOT BUG:
       final int whoWasAlreadyDown = unfixed.getPointerId(1 - actionIndex);
       final float anchorX = pointerCoords[actionIndex].x;
       final float anchorY = pointerCoords[actionIndex].y;
+      // This situation is pretty clear, so regardless of previous state, force it to the beginning of ARMING.
+      if (mFixerState.mCurrentState != FixerState.STATE_DISARMED) {
+        mFixerState.disarmAll();
+      }
       mFixerState.armFirst(whoWasAlreadyDown,
                            whoJustWentDown, 
                            anchorX, anchorY);
-      if (annotationOrNull != null) annotationOrNull.append("(ARMING: "+whoWasAlreadyDown+" was already down, "+whoJustWentDown+" just went down, anchor="+anchorX+","+anchorY);
+      if (annotationOrNull != null) annotationOrNull.append("(ARMING: "+whoWasAlreadyDown+" was already down, "+whoJustWentDown+" just went down with anchor="+anchorX+","+anchorY);
     } else if (mCurrentState == STATE_ARMING) {
       if (action == ACTION_POINTER_DOWN) {
         final int whoJustWentDown = unfixed.getPointerId(actionIndex);
@@ -1381,7 +1398,7 @@ NOT BUG:
         final float anchorY = pointerCoords[actionIndex].y;
         mFixerState.armOneMore(whoJustWentDown,
                                anchorX, anchorY);
-        if (annotationOrNull != null) annotationOrNull.append("(ARMING ANOTHER: "+whoJustWentDown+" just went down, anchor="+anchorX+","+anchorY);
+        if (annotationOrNull != null) annotationOrNull.append("(ARMING ANOTHER: "+whoJustWentDown+" just went down with anchor="+anchorX+","+anchorY);
       } else if (action == ACTION_MOVE) {
         if (historyIndex == historySize) {  // i.e. this is the "primary" sub-event, not historical
           final int theAlreadyDownIndex = unfixed.findPointerIndex(mFixerState.mTheAlreadyDownOne);
@@ -1389,7 +1406,7 @@ NOT BUG:
           final float anchorX = pointerCoords[theAlreadyDownIndex].x;
           final float anchorY = pointerCoords[theAlreadyDownIndex].x;
           mFixerState.armTheOneWhoWasAlreadyDown(anchorX, anchorY);
-          if (annotationOrNull != null) annotationOrNull.append("(ARMED: theAlreadyDownOne="+mFixerState.mTheAlreadyDownOne+", anchor="+anchorX+","+anchorY);
+          if (annotationOrNull != null) annotationOrNull.append("(ARMED: theAlreadyDownOne="+mFixerState.mTheAlreadyDownOne+" with anchor="+anchorX+","+anchorY);
         } else {
           // We're in a historical sub-event of what may be the arming event.  Do nothing special.
         }
@@ -1450,9 +1467,12 @@ NOT BUG:
       }
     }
 
-    if (verboseLevel >= 1) Log.i(TAG, "          after: id0="+mId0+" id1="+mId1+" anchor0="+mAnchor0x+","+mAnchor0y+" anchor1="+mAnchor1x+","+mAnchor1y+" lkg0="+mLastKnownGood0x+","+mLastKnownGood0y+" lkg1="+mLastKnownGood1x+","+mLastKnownGood1y+"");
+    if (annotationsOrNull != null) {
+      annotationsOrNull.add(annotationOrNull.toString());
+    }
+
     if (verboseLevel >= 1) Log.i(TAG, "        out XXXNEWcorrectPointerCoordsUsingState(historyIndex="+historyIndex+"/"+unfixed.getHistorySize()+", eventTime="+(eventTime-unfixed.getDownTime())/1000.+")  after: "+stateToString(mCurrentState));
-  }
+  }  // XXXNEWcorrectPointerCoordsUsingState
 
   private void correctPointerCoordsUsingState(
       MotionEvent unfixed,
@@ -1596,8 +1616,8 @@ NOT BUG:
   }  // correctPointerCoordsUsingState
 
 
-  // Framework calls this; we create a fixed MotionEvent
-  // and call the wrapped listener on it.
+  // Framework calls this with the original unfixed MotionEvent;
+  // we create a fixed MotionEvent and call the wrapped listener on it.
   @Override
   public boolean onTouch(View view, MotionEvent unfixed) {
     final int verboseLevel = 1;  // 0: nothing, 1: dump entire sequence on final UP, 2: and in/out
@@ -1637,7 +1657,7 @@ NOT BUG:
           XXXNEWcorrectPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords, mAnnotationsOrNull);
 
           if (mAnnotationsOrNull != null) {
-            // It must have appended one annotation (possibly null)
+            // It must have appended exactly one annotation (possibly null)
             CHECK_EQ(mAnnotationsOrNull.size(), mFixedLogicalMotionEventsSinceFirstDown.size() + h + 1);
           }
           int historicalMetaState = unfixed.getMetaState(); // huh? this can't be right, but I don't see any way to query metaState per-history
