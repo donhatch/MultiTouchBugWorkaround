@@ -224,6 +224,7 @@ import static android.view.MotionEvent.ACTION_CANCEL;
 import android.view.View;
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
@@ -266,8 +267,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     throw new AssertionError("unrecognized MotionEvent action "+action);
   }
 
-  final private int MAX_FINGERS = 10;
-  final private float[] startXorig = new float[MAX_FINGERS];
+  final private static int MAX_FINGERS = 10;
   final private float[] startYorig = new float[MAX_FINGERS];
   final private float[] prevPrevXorig = new float[MAX_FINGERS];
   final private float[] prevPrevYorig = new float[MAX_FINGERS];
@@ -1175,7 +1175,86 @@ NOT BUG:
       CHECK(false);
       return null;
     }
+    private int mCurrentState = STATE_DISARMED;
+    private int mTheAlreadyDownOne = -1;
+    private int mNumAnchoredIds = 0;
+    private int[] mAnchoredIds = new int[MAX_FINGERS];  // XXX do we need this?
+    private float[] mAnchorXs = new float[MAX_FINGERS];  // indexed by id
+    private float[] mAnchorYs = new float[MAX_FINGERS];  // indexed by id
+    // Note, fixer state provides these, but caller maintains the valuess.
+    private float[] mCurrentXs = new float[MAX_FINGERS];  // indexed by id
+    private float[] mCurrentYs = new float[MAX_FINGERS];  // indexed by id
+    { Arrays.fill(mAnchorXs, Float.NaN); }
+    { Arrays.fill(mAnchorYs, Float.NaN); }
+    { Arrays.fill(mCurrentXs, Float.NaN); }
+    { Arrays.fill(mCurrentYs, Float.NaN); }
+    private void disarmAll() {
+      // This can happen from any state
+      int numDisarmed = 0;
+      if (mNumAnchoredIds > 0) {
+        // We didn't keep an explicit list of who was armed
+        // (since it would have been a pain to keep track and support deleting items,
+        // so just go through them all at this point.
+        for (int id = 0; id < MAX_FINGERS; ++id) {
+          if (!Float.isNaN(mAnchorXs[id])) {
+            CHECK(!Float.isNaN(mAnchorYs[id]));
+            mAnchorXs[id] = Float.NaN;
+            mAnchorYs[id] = Float.NaN;
+            numDisarmed++;
+          } else {
+            CHECK(Float.isNaN(mAnchorYs[id]));
+          }
+        }
+      }
+      CHECK_EQ(numDisarmed, mNumAnchoredIds);
+      mNumAnchoredIds = 0;
+      mTheAlreadyDownOne = -1;
+    }
+    private void armFirst(int whoWasAlreadyDown, int whoJustWentDown, float anchorX, float anchorY) {
+      CHECK_EQ(mCurrentState, STATE_DISARMED);
+      mCurrentState = STATE_ARMING;
+      // unset and stays unset...
+      CHECK(Float.isNaN(mAnchorXs[whoWasAlreadyDown]));
+      CHECK(Float.isNaN(mAnchorYs[whoWasAlreadyDown]));
+      // unset and we're about to set it...
+      CHECK_EQ(mTheAlreadyDownOne, -1);
+      mTheAlreadyDownOne = whoWasAlreadyDown;
+      CHECK(Float.isNaN(mAnchorXs[whoJustWentDown]));
+      CHECK(Float.isNaN(mAnchorYs[whoJustWentDown]));
+      mAnchorXs[whoJustWentDown] = anchorX;
+      mAnchorYs[whoJustWentDown] = anchorY;
+      CHECK_EQ(mNumAnchoredIds, 0);
+      mNumAnchoredIds++;
+    }
+    private void armOneMore(int whoJustWentDown, float anchorX, float anchorY) {
+      CHECK_EQ(mCurrentState, STATE_ARMING);
+      CHECK(Float.isNaN(mAnchorXs[whoJustWentDown]));
+      CHECK(Float.isNaN(mAnchorYs[whoJustWentDown]));
+      mAnchorXs[whoJustWentDown] = anchorX;
+      mAnchorYs[whoJustWentDown] = anchorY;
+      mNumAnchoredIds++;
+    }
+    private void armTheOneWhoWasAlreadyDown(float anchorX, float anchorY) {
+      CHECK_EQ(mCurrentState, STATE_ARMING);
+      mCurrentState = STATE_ARMED;
+      CHECK(Float.isNaN(mAnchorXs[mTheAlreadyDownOne]));
+      CHECK(Float.isNaN(mAnchorYs[mTheAlreadyDownOne]));
+      mAnchorXs[mTheAlreadyDownOne] = anchorX;
+      mAnchorYs[mTheAlreadyDownOne] = anchorY;
+      mNumAnchoredIds++;
+      mTheAlreadyDownOne = -1;  // forget who it was; it's symmetric from here on out
+    }
+    private void disarmOne(int whoJustWentUp) {
+      if (mCurrentState != STATE_ARMING) CHECK_EQ(mCurrentState, STATE_ARMED);  // I think this is right
+      CHECK(!Float.isNaN(mAnchorXs[whoJustWentUp]));
+      CHECK(!Float.isNaN(mAnchorYs[whoJustWentUp]));
+      mAnchorXs[whoJustWentUp] = Float.NaN;
+      mAnchorYs[whoJustWentUp] = Float.NaN;
+      --mNumAnchoredIds;
+    }
   }
+  private FixerState mFixerState = new FixerState();
+
 
   // (XXX Older more naive version...)
   // So the states are:
@@ -1257,6 +1336,122 @@ NOT BUG:
     mLastKnownGood0y = lastKnownGood0y;
     mLastKnownGood1x = lastKnownGood1x;
     mLastKnownGood1y = lastKnownGood1y;
+  }
+
+  private void XXXNEWcorrectPointerCoordsUsingState(
+      MotionEvent unfixed,
+      int historyIndex,
+      long eventTime,
+      MotionEvent.PointerCoords pointerCoords[],
+      ArrayList<String> annotationsOrNull  // if not null, we append one item.
+      ) {
+    final int verboseLevel = 0;
+    if (verboseLevel >= 1) Log.i(TAG, "        in XXXNEWcorrectPointerCoordsUsingState(historyIndex="+historyIndex+"/"+unfixed.getHistorySize()+", eventTime="+(eventTime-unfixed.getDownTime())/1000.+")  before: "+stateToString(mCurrentState));
+    if (verboseLevel >= 1) Log.i(TAG, "          before: id0="+mId0+" id1="+mId1+" anchor0="+mAnchor0x+","+mAnchor0y+" anchor1="+mAnchor1x+","+mAnchor1y+" lkg0="+mLastKnownGood0x+","+mLastKnownGood0y+" lkg1="+mLastKnownGood1x+","+mLastKnownGood1y+"");
+    CHECK(false); // XXX FIX PREVIOUS MESSAGE
+
+    StringBuilder annotationOrNull = annotationsOrNull!=null ? new StringBuilder() : null; // CBB: maybe wasteful since most lines don't get annotated
+
+    final int action = unfixed.getActionMasked();
+    final int actionIndex = unfixed.getActionIndex();
+    final int pointerCount = unfixed.getPointerCount();
+    final int historySize = unfixed.getHistorySize();
+
+    if (annotationsOrNull != null) {
+      annotationsOrNull.add(annotationOrNull.toString());
+    }
+
+    // No matter what state we're in,
+    // if we see the first event of the arming sequence,
+    // honor it.
+    if (action == ACTION_POINTER_DOWN
+     && pointerCount == 2) {
+      final int whoJustWentDown = unfixed.getPointerId(actionIndex);
+      final int whoWasAlreadyDown = unfixed.getPointerId(1 - actionIndex);
+      final float anchorX = pointerCoords[actionIndex].x;
+      final float anchorY = pointerCoords[actionIndex].y;
+      mFixerState.armFirst(whoWasAlreadyDown,
+                           whoJustWentDown, 
+                           anchorX, anchorY);
+      if (annotationOrNull != null) annotationOrNull.append("(ARMING: "+whoWasAlreadyDown+" was already down, "+whoJustWentDown+" just went down, anchor="+anchorX+","+anchorY);
+    } else if (mCurrentState == STATE_ARMING) {
+      if (action == ACTION_POINTER_DOWN) {
+        final int whoJustWentDown = unfixed.getPointerId(actionIndex);
+        final float anchorX = pointerCoords[actionIndex].x;
+        final float anchorY = pointerCoords[actionIndex].y;
+        mFixerState.armOneMore(whoJustWentDown,
+                               anchorX, anchorY);
+        if (annotationOrNull != null) annotationOrNull.append("(ARMING ANOTHER: "+whoJustWentDown+" just went down, anchor="+anchorX+","+anchorY);
+      } else if (action == ACTION_MOVE) {
+        if (historyIndex == historySize) {  // i.e. this is the "primary" sub-event, not historical
+          final int theAlreadyDownIndex = unfixed.findPointerIndex(mFixerState.mTheAlreadyDownOne);
+          CHECK_NE(theAlreadyDownIndex, -1);
+          final float anchorX = pointerCoords[theAlreadyDownIndex].x;
+          final float anchorY = pointerCoords[theAlreadyDownIndex].x;
+          mFixerState.armTheOneWhoWasAlreadyDown(anchorX, anchorY);
+          if (annotationOrNull != null) annotationOrNull.append("(ARMED: theAlreadyDownOne="+mFixerState.mTheAlreadyDownOne+", anchor="+anchorX+","+anchorY);
+        } else {
+          // We're in a historical sub-event of what may be the arming event.  Do nothing special.
+        }
+      } else {
+        // Didn't see continuation of arming sequence; disarm.
+        // CBB: I'm unclear on when and if this can happen, and if it's correct when 3 or more pointers are involved
+        if (annotationOrNull != null) annotationOrNull.append("(DISARMED because didn't see continuation of arming sequence)");
+        mFixerState.disarmAll();
+      }
+    } else if (mCurrentState == STATE_ARMED) {  // i.e. if was already armed (not just now got armed)
+      for (int index = 0; index < pointerCount; ++index) {
+        final int id = unfixed.getPointerId(index);
+        if (!Float.isNaN(mFixerState.mAnchorXs[id])) {
+          // This id is currently believed to be bugging.
+          if (pointerCoords[index].x == mFixerState.mAnchorXs[id]
+           && pointerCoords[index].y == mFixerState.mAnchorYs[id]) {
+            // The pointer moved to (or stayed still at) its anchor.
+            // That's what happens when it meant to stay at its current position.
+            // Correct it.
+            pointerCoords[index].x = mFixerState.mCurrentXs[id];
+            pointerCoords[index].y = mFixerState.mCurrentYs[id];
+          } else {
+            if (pointerCoords[index].x == mFixerState.mCurrentXs[id]
+             && pointerCoords[index].y == mFixerState.mCurrentYs[id]) {
+              // The pointer stayed the same, at an x,y that is *not* the anchor.
+              // The bug is not happening at this id (since, when the bug is happening at this id,
+              // staying the same always gets botched into moving to the anchor).
+              // CBB: in some cases, particularly in simple cases involving only 2 pointers, we could now decide the bug wasn't happening at all, and move all the way to DISARMED at this point.  Is that important?  Maybe not.
+              //
+              // Exception: I've seen a rogue stay-the-same-that's-not-the-anchor in the following situation (BAD05):
+              //    1 was moving
+              //    0&2 down simultaneously, but only 0&1 started bugging
+              //    in fact, the 2 down happened later enough that we were alreadly armed and correctly fixing id 1
+              //    (this happened to be the last stationary of id 0's down).
+              //    on that 2 down, the 1 did a rogue stay-the-same-that's-not-the-anchor.
+              //    CBB: I'm not sure how to completely characterize this situation,
+              //    but I'll err on the side of assuming it's still bugging (when really not bugging,
+              //    we'll get evidence of not bugging soon enough anyway).
+              if (action != ACTION_UP && action != ACTION_MOVE) {
+                if (annotationOrNull != null) annotationOrNull.append("(NOT DISARMING id "+id+" on rogue stay-the-same on action="+actionToString(action)+"("+unfixed.getPointerId(actionIndex)+")");
+              } else {
+                if (annotationOrNull != null) annotationOrNull.append("(DISARMING id "+id+" because it stayed the same and is *not* the anchor.  I think bug isn't happening here (or isn't happening any more here))");
+                mFixerState.disarmOne(id);
+              }
+            }
+          }
+        }
+      }
+    }  // mCurrentState == STATE_ARMED
+
+    if (mFixerState.mCurrentState != FixerState.STATE_DISARMED) {
+      // Remember all current coords (original or corrected)
+      // that could possibly be relevant, for next time.
+      for (int index = 0; index < pointerCount; ++index) {
+        final int id = unfixed.getPointerId(index);
+        mFixerState.mCurrentXs[id] = pointerCoords[index].x;
+        mFixerState.mCurrentYs[id] = pointerCoords[index].y;
+      }
+    }
+
+    if (verboseLevel >= 1) Log.i(TAG, "          after: id0="+mId0+" id1="+mId1+" anchor0="+mAnchor0x+","+mAnchor0y+" anchor1="+mAnchor1x+","+mAnchor1y+" lkg0="+mLastKnownGood0x+","+mLastKnownGood0y+" lkg1="+mLastKnownGood1x+","+mLastKnownGood1y+"");
+    if (verboseLevel >= 1) Log.i(TAG, "        out XXXNEWcorrectPointerCoordsUsingState(historyIndex="+historyIndex+"/"+unfixed.getHistorySize()+", eventTime="+(eventTime-unfixed.getDownTime())/1000.+")  after: "+stateToString(mCurrentState));
   }
 
   private void correctPointerCoordsUsingState(
@@ -1437,7 +1632,10 @@ NOT BUG:
           if (mAnnotationsOrNull != null) {
             CHECK_EQ(mAnnotationsOrNull.size(), mFixedLogicalMotionEventsSinceFirstDown.size() + h);
           }
-          correctPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords, mAnnotationsOrNull);
+
+          //correctPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords, mAnnotationsOrNull);
+          XXXNEWcorrectPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords, mAnnotationsOrNull);
+
           if (mAnnotationsOrNull != null) {
             // It must have appended one annotation (possibly null)
             CHECK_EQ(mAnnotationsOrNull.size(), mFixedLogicalMotionEventsSinceFirstDown.size() + h + 1);
