@@ -1391,6 +1391,7 @@ NOT BUG:
 
     final int action = unfixed.getActionMasked();
     final int actionIndex = unfixed.getActionIndex();
+    final int actionId = unfixed.getPointerId(actionIndex);
     final int pointerCount = unfixed.getPointerCount();
     final int historySize = unfixed.getHistorySize();
 
@@ -1399,7 +1400,7 @@ NOT BUG:
     // honor it.
     if (action == ACTION_POINTER_DOWN
      && pointerCount == 2) {
-      final int whoJustWentDown = unfixed.getPointerId(actionIndex);
+      final int whoJustWentDown = actionId;
       final int whoWasAlreadyDown = unfixed.getPointerId(1 - actionIndex);
       final float anchorX = pointerCoords[actionIndex].x;
       final float anchorY = pointerCoords[actionIndex].y;
@@ -1414,7 +1415,7 @@ NOT BUG:
       if (annotationOrNull != null) annotationOrNull.append("(ARMING: "+whoWasAlreadyDown+" was already down, "+whoJustWentDown+" just went down with anchor="+anchorX+","+anchorY+")");
     } else if (mFixerState.mCurrentState == FixerState.STATE_ARMING) {
       if (action == ACTION_POINTER_DOWN) {
-        final int whoJustWentDown = unfixed.getPointerId(actionIndex);
+        final int whoJustWentDown = actionId;
         final float anchorX = pointerCoords[actionIndex].x;
         final float anchorY = pointerCoords[actionIndex].y;
         mFixerState.armOneMore(whoJustWentDown,
@@ -1439,39 +1440,45 @@ NOT BUG:
         mFixerState.disarmAll();
       }
     } else if (mFixerState.mCurrentState == FixerState.STATE_ARMED) {  // i.e. if was already armed (not just now got armed)
-      for (int index = 0; index < pointerCount; ++index) {
-        final int id = unfixed.getPointerId(index);
-        if (!Float.isNaN(mFixerState.mAnchorXs[id])) {
-          // This id is currently believed to be bugging.
-          if (pointerCoords[index].x == mFixerState.mAnchorXs[id]
-           && pointerCoords[index].y == mFixerState.mAnchorYs[id]) {
-            // The pointer moved to (or stayed still at) its anchor.
-            // That's what happens when it meant to stay at its current position.
-            // Correct it.
-            pointerCoords[index].x = mFixerState.mCurrentXs[id];
-            pointerCoords[index].y = mFixerState.mCurrentYs[id];
-          } else {
-            if (pointerCoords[index].x == mFixerState.mCurrentXs[id]
-             && pointerCoords[index].y == mFixerState.mCurrentYs[id]) {
-              // The pointer stayed the same, at an x,y that is *not* the anchor.
-              // The bug is not happening at this id (since, when the bug is happening at this id,
-              // staying the same always gets botched into moving to the anchor).
-              // CBB: in some cases, particularly in simple cases involving only 2 pointers, we could now decide the bug wasn't happening at all, and move all the way to DISARMED at this point.  Is that important?  Maybe not.
-              //
-              // Exception: I've seen a rogue stay-the-same-that's-not-the-anchor in the following situation (BAD05):
-              //    1 was moving
-              //    0&2 down simultaneously, but only 0&1 started bugging
-              //    in fact, the 2 down happened later enough that we were alreadly armed and correctly fixing id 1
-              //    (this happened to be the last stationary of id 0's down).
-              //    on that 2 down, the 1 did a rogue stay-the-same-that's-not-the-anchor.
-              //    CBB: I'm not sure how to completely characterize this situation,
-              //    but I'll err on the side of assuming it's still bugging (when really not bugging,
-              //    we'll get evidence of not bugging soon enough anyway).
-              if (action != ACTION_UP && action != ACTION_MOVE) {
-                if (annotationOrNull != null) annotationOrNull.append("(NOT DISARMING id "+id+" on rogue stay-the-same at non-anchor on action="+actionToString(action)+"("+unfixed.getPointerId(actionIndex)+")");
-              } else {
-                if (annotationOrNull != null) annotationOrNull.append("(DISARMING id "+id+" because it stayed the same and is *not* the anchor "+mFixerState.mAnchorXs[id]+","+mFixerState.mAnchorYs[id]+".  I think bug isn't happening here (or isn't happening any more here))");
-                mFixerState.disarmOne(id);
+      if ((action == ACTION_POINTER_UP || action == ACTION_UP)
+       && !Float.isNaN(mFixerState.mAnchorXs[actionId])) {
+        if (annotationOrNull != null) annotationOrNull.append("(DISARMING id "+actionId+" on "+actionToString(action)+")");
+        mFixerState.disarmOne(actionId);
+      } else {
+        for (int index = 0; index < pointerCount; ++index) {
+          final int id = unfixed.getPointerId(index);
+          if (!Float.isNaN(mFixerState.mAnchorXs[id])) {
+            // This id is currently believed to be bugging.
+            if (pointerCoords[index].x == mFixerState.mAnchorXs[id]
+             && pointerCoords[index].y == mFixerState.mAnchorYs[id]) {
+              // The pointer moved to (or stayed still at) its anchor.
+              // That's what happens when it meant to stay at its current position.
+              // Correct it.
+              pointerCoords[index].x = mFixerState.mCurrentXs[id];
+              pointerCoords[index].y = mFixerState.mCurrentYs[id];
+            } else {
+              if (pointerCoords[index].x == mFixerState.mCurrentXs[id]
+               && pointerCoords[index].y == mFixerState.mCurrentYs[id]) {
+                // The pointer stayed the same, at an x,y that is *not* the anchor.
+                // The bug is not happening at this id (since, when the bug is happening at this id,
+                // staying the same always gets botched into moving to the anchor).
+                // CBB: in some cases, particularly in simple cases involving only 2 pointers, we could now decide the bug wasn't happening at all, and move all the way to DISARMED at this point.  Is that important?  Maybe not.
+                //
+                // Exception: I've seen a rogue stay-the-same-that's-not-the-anchor in the following situation (BAD05):
+                //    1 was moving
+                //    0&2 down simultaneously, but only 0&1 started bugging
+                //    in fact, the 2 down happened later enough that we were alreadly armed and correctly fixing id 1
+                //    (this happened to be the last stationary of id 0's down).
+                //    on that 2 down, the 1 did a rogue stay-the-same-that's-not-the-anchor.
+                //    CBB: I'm not sure how to completely characterize this situation,
+                //    but I'll err on the side of assuming it's still bugging (when really not bugging,
+                //    we'll get evidence of not bugging soon enough anyway).
+                if (action != ACTION_UP && action != ACTION_MOVE) {
+                  if (annotationOrNull != null) annotationOrNull.append("(NOT DISARMING id "+id+" on rogue stay-the-same at non-anchor on action="+actionToString(action)+"("+actionId+")");
+                } else {
+                  if (annotationOrNull != null) annotationOrNull.append("(DISARMING id "+id+" because it stayed the same and is *not* the anchor "+mFixerState.mAnchorXs[id]+","+mFixerState.mAnchorYs[id]+".  I think bug isn't happening here (or isn't happening any more here))");
+                  mFixerState.disarmOne(id);
+                }
               }
             }
           }
