@@ -74,12 +74,14 @@ public class PaintView extends FrameLayout {
   private Stuff fixedStuff = new Stuff();
 
   private int mMaxSinceLastClear = 0;
-  private int mMaxEver = 0;
-  private int mMaxEverEver = 0;
+  private int mMaxSinceLastConstruct = 0;
+  private int mMaxSinceProcessStarted = 0;
 
   public PaintView(final Context context) {
     super(context);
     Log.i(TAG, "    in PaintView ctor");
+
+    mMaxSinceLastConstruct = 0;
 
     mTheTouchableDrawable = new android.view.View(context) {
       @Override
@@ -102,8 +104,8 @@ public class PaintView extends FrameLayout {
 
     final TextView buggingTextView = new TextView(context) {{ setText("bugging: {}  "); }};
     final TextView maxSinceLastClearTextView = new TextView(context) {{ setText("max since last clear: "+mMaxSinceLastClear+"  "); }};
-    final TextView maxEverTextView = new TextView(context) {{ setText("max ever: "+mMaxEver+"  "); }};
-    final TextView maxEverEverTextView = new TextView(context) {{ setText("max ever ever: "+mMaxEverEver+"  "); }};
+    final TextView maxSinceLastConstructTextView = new TextView(context) {{ setText("max since last construct: "+mMaxSinceLastConstruct+"  "); }};
+    final TextView maxSinceProcessStartedTextView = new TextView(context) {{ setText("max since process started: "+mMaxSinceProcessStarted+"  "); }};
     if (true) {
       addView(new LinearLayout(context) {{
         addView(new Button(context) {{
@@ -138,7 +140,8 @@ public class PaintView extends FrameLayout {
           setOrientation(VERTICAL);
           addView(buggingTextView);
           addView(maxSinceLastClearTextView);
-          addView(maxEverTextView);
+          addView(maxSinceLastConstructTextView);
+          addView(maxSinceProcessStartedTextView);
         }});
       }});
     }
@@ -170,12 +173,12 @@ public class PaintView extends FrameLayout {
           if (buggingIds.length > mMaxSinceLastClear) {
             mMaxSinceLastClear = buggingIds.length;
             maxSinceLastClearTextView.setText("max since last clear: "+mMaxSinceLastClear+"  ");
-            if (buggingIds.length > mMaxEver) {
-              mMaxEver = buggingIds.length;
-              maxEverTextView.setText("max ever: "+mMaxEver+"  ");
-              if (buggingIds.length > mMaxEverEver) {
-                mMaxEverEver = buggingIds.length;
-                maxEverEverTextView.setText("max ever ever: "+mMaxEverEver+"  ");
+            if (buggingIds.length > mMaxSinceLastConstruct) {
+              mMaxSinceLastConstruct = buggingIds.length;
+              maxSinceLastConstructTextView.setText("max since last construct: "+mMaxSinceLastConstruct+"  ");
+              if (buggingIds.length > mMaxSinceProcessStarted) {
+                mMaxSinceProcessStarted = buggingIds.length;
+                maxSinceProcessStartedTextView.setText("max since process started: "+mMaxSinceProcessStarted+"  ");
               }
             }
           }
