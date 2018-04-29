@@ -35,8 +35,9 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
-import android.widget.LinearLayout;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import java.io.FileNotFoundException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -72,6 +73,10 @@ public class PaintView extends FrameLayout {
   private Stuff unfixedStuff = new Stuff();
   private Stuff fixedStuff = new Stuff();
 
+  private int mMaxSinceLastClear = 0;
+  private int mMaxEver = 0;
+  private int mMaxEverEver = 0;
+
   public PaintView(final Context context) {
     super(context);
     Log.i(TAG, "    in PaintView ctor");
@@ -95,6 +100,10 @@ public class PaintView extends FrameLayout {
     };
     addView(mTheTouchableDrawable, new LayoutParams(LayoutParams.MATCH_PARENT,LayoutParams.MATCH_PARENT));
 
+    final TextView buggingTextView = new TextView(context) {{ setText("bugging: {}  "); }};
+    final TextView maxSinceLastClearTextView = new TextView(context) {{ setText("max since last clear: "+mMaxSinceLastClear+"  "); }};
+    final TextView maxEverTextView = new TextView(context) {{ setText("max ever: "+mMaxEver+"  "); }};
+    final TextView maxEverEverTextView = new TextView(context) {{ setText("max ever ever: "+mMaxEverEver+"  "); }};
     if (true) {
       addView(new LinearLayout(context) {{
         addView(new Button(context) {{
@@ -107,6 +116,8 @@ public class PaintView extends FrameLayout {
               unfixedStuff.mCompletedPaints.clear();
               fixedStuff.mCompletedPaints.clear();
               mTheTouchableDrawable.invalidate();
+              mMaxSinceLastClear = 0;
+              maxSinceLastClearTextView.setText("max since last clear: "+mMaxSinceLastClear+"  ");  // CBB: method
             }
           });
         }});
@@ -119,6 +130,15 @@ public class PaintView extends FrameLayout {
               mTheTouchableDrawable.invalidate();
             }
           });
+        }});
+        addView(new TextView(context), new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT) {{
+          weight = 1.f;
+        }});
+        addView(new LinearLayout(context) {{
+          setOrientation(VERTICAL);
+          addView(buggingTextView);
+          addView(maxSinceLastClearTextView);
+          addView(maxEverTextView);
         }});
       }});
     }
@@ -141,7 +161,27 @@ public class PaintView extends FrameLayout {
         // Then pass it through to the FixedOnTouchListener,
         // which creates a fixed event which is passed
         // to our wrapped OnTouchListener's onTouch() above.
-        return super.onTouch(view, unfixedEvent);
+        boolean answer = super.onTouch(view, unfixedEvent);
+
+        {
+          // Before returning, query the fixer to find out
+          // which ids are now bugging.
+          final int[] buggingIds = buggingIds();
+          if (buggingIds.length > mMaxSinceLastClear) {
+            mMaxSinceLastClear = buggingIds.length;
+            maxSinceLastClearTextView.setText("max since last clear: "+mMaxSinceLastClear+"  ");
+            if (buggingIds.length > mMaxEver) {
+              mMaxEver = buggingIds.length;
+              maxEverTextView.setText("max ever: "+mMaxEver+"  ");
+              if (buggingIds.length > mMaxEverEver) {
+                mMaxEverEver = buggingIds.length;
+                maxEverEverTextView.setText("max ever ever: "+mMaxEverEver+"  ");
+              }
+            }
+          }
+        }
+
+        return answer;
       }
 
       {

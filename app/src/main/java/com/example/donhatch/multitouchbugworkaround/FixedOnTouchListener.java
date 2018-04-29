@@ -933,6 +933,10 @@ public class FixedOnTouchListener implements View.OnTouchListener {
   }
   private FixerState mFixerState = new FixerState();
 
+  // Caller can query this to find out the current list of bugging ids.
+  public int[] buggingIds() {
+    return mSimplerFixerState.buggingIdsExternalSlow();  // I have mixed feelings about this.
+  }
 
   private static class SIMPLERFixerState {
     private float[] mCurrentX = new float[MAX_FINGERS];  // indexed by id
@@ -944,7 +948,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     { Arrays.fill(mCurrentY, Float.NaN); }
     { Arrays.fill(mForbiddenX, Float.NaN); }
     { Arrays.fill(mForbiddenY, Float.NaN); }
-    private int[] buggingIds() {
+    private int[] buggingIdsInternalSlow() {
       int n = 0;
       for (int id = 0; id < MAX_FINGERS; ++id) {
         if (!Float.isNaN(mForbiddenX[id])) {
@@ -964,6 +968,12 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       CHECK_EQ(i, n);
       return answer;
     }
+    // Don't expose our inner idea of current bugging ids, since it's overly alarmist.
+    // While arming, which is speculative, return empty.
+    // CBB: argh, even with this fudge, it's still speculative and alarmist :-(
+    private int[] buggingIdsExternalSlow() {
+      return mWhoNeedsForbidden != -1 ? new int[] {} : buggingIdsInternalSlow();
+    }
   };
   private SIMPLERFixerState mSimplerFixerState = new SIMPLERFixerState();
   private void SIMPLERcorrectPointerCoordsUsingState(
@@ -978,7 +988,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
 
     StringBuilder annotationOrNull = annotationsOrNull!=null ? new StringBuilder() : null; // CBB: maybe wasteful since most lines don't get annotated
 
-    if (annotationOrNull != null) annotationOrNull.append(STRINGIFY_COMPACT(mSimplerFixerState.buggingIds()));
+    if (annotationOrNull != null) annotationOrNull.append(STRINGIFY_COMPACT(mSimplerFixerState.buggingIdsInternalSlow()));
 
     final int action = unfixed.getActionMasked();
     final int actionIndex = unfixed.getActionIndex();
@@ -1081,7 +1091,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       mSimplerFixerState.mCurrentY[id] = pointerCoords[index].y;
     }
 
-    if (annotationOrNull != null) annotationOrNull.append(STRINGIFY_COMPACT(mSimplerFixerState.buggingIds()));
+    if (annotationOrNull != null) annotationOrNull.append(STRINGIFY_COMPACT(mSimplerFixerState.buggingIdsInternalSlow()));
 
     if (annotationsOrNull != null) {
       annotationsOrNull.add(annotationOrNull.toString());
