@@ -3,12 +3,12 @@
 // https://android-review.googlesource.com/c/platform/frameworks/native/+/640606/
 //
 // TODO: allow querying number-of-bugging-pointers, either via callback or by querying the listener
+// TODO: ui that displays, e.g.   num buggy pointers: 1  max since last clear:  2  max ever: 3
 // TODO: be able to actually play back the stuff parsed from a dump file:
 //   - be able to convert from LogicalMotionEvent(s) to MotionEvent
 // TODO: dump the gesture if possible when an exception is being thrown?  more generally, when something rare and interesting happens that I want to trace
 // TODO: investigate whether I can get ACTION_CANCEL and/or ACTION_OUTSIDE.
-
-// BUG: I'm setting tryTheStationaryTest=false now because it just doesn't seem to be reliable... that sucks :-(
+// TODO: for screenshot, have a fake-ish mode that decimates to some fraction of the spines
 
 package com.example.donhatch.multitouchbugworkaround;
 
@@ -1077,6 +1077,14 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             //       In fact, the event looks completely identical to the (primary of the) previous event??
             //       That's pretty strange indeed.
             // Okay, that seems to work.  TODO: Clean this up at some point.
+            // Thoughts for a simpler and stricter condition:
+            //    - exonerate only on a very specific and common situation that I think is safe.  That is:
+            //      - a MOVE with-history where the primary (non-history) x,y differs from the history x,y
+            // There *might* be more inclusive criteria for exoneration,
+            // but we'll err on the side of assuming it's still bugging
+            // (when not really bugging, we'll get evidence of not bugging soon enough via
+            // another instance of this criterion anyway).
+            // (Well, except when the last finger down, in which case we can be considered bugging indefinitely anyway; oh well!)
             boolean trySuperSmartFalseAlarmProtection = true;
 
             if (tryTheStationaryTest) {
@@ -1087,7 +1095,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                 // staying the same always gets botched into moving to the anchor).
                 // CBB: in some cases, particularly in simple cases involving only 2 pointers, we could now decide the bug wasn't happening at all, and move all the way to DISARMED at this point.  Is that important?  Maybe not.
                 //
-                // Exception: I've seen a rogue stay-the-same-that's-not-the-anchor in the following situation (BAD05):
+                // Exception: I've seen a rogue stay-the-same-that's-not-the-anchor in the following situation:
                 //    1 was moving
                 //    0&2 down simultaneously, but only 0&1 started bugging
                 //    in fact, the 2 down happened later enough that we were alreadly armed and correctly fixing id 1
