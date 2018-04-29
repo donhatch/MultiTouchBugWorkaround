@@ -799,46 +799,29 @@ public class FixedOnTouchListener implements View.OnTouchListener {
   }
 
   // The sequence of events that arms the fixer is two consecutive events:
-  //     1. POINTER_DOWN(0) with exactly one other pointer id1 already down  (anchor0x,anchor0y = the x,y of that event)
-  //        followed by:
-  //     2. MOVE, with 0 and id1 down  (anchor1x,anchor1y = the primary (non-historical) x,y of that event)
-  // While armed:
-  //        if id 0's x,y appears to be anchor0x,anchor0y, change it to its previous value
-  //        if id id1's x,y appears to be anchor1x,anchor1y, change it to its previous value
-  // The pattern that disarms the fixer is either:
-  //     - a new different arming
-  //     - if either id0 or id1 experiences the same x,y twice in a row
-  //        that is *not* the respective anchor position, then the bug isn't happening; disarm
-  // Note, we do *not* disarm the fixer on:
-  //     - a third pointer down (that doesn't affect the bug)
-  //     - id 0 or id1 UP (the bug can still effect the other one,
-  //       both on that UP event and subsequent ones.
-  //       generally only for about 1/10 of a second, but who knows)
-  //     - we could disarm id 0 when it goes UP, and disarm id id1 when it goes up, though.
-  // UPDATE: actually the going-down id is sometimes not zero (infrequently).  We call it id0.
-  //
-  // The sequence of events that arms the fixer is two consecutive events:
   //    1. N(>=1) consecutive POINTER_DOWNs when there was previously exactly one other pointer already down
   //            (each of the newly-down id's anchor x,y is the x,y of the respective POINTER_DOWN event)
   //       immediately followed by:
   //    2. MOVE, with all N+1 pointers still down.
   //            (the originally-down id's anchor x,y is the primary (non-historical) x,y of this move event)
   //    From then on, it's symmetric: each of the N+1 participating ids
-  //    keep bugging until they go up, or until it is the only one left
-  //    (in which case it may keep bugging on the other guy's POINTER_UP and/or a small handful of subsequent lone MOVEs).
+  //    keep bugging until it goes up, or until it is the only one left
+  //    (in which case it may keep bugging on the other guy's POINTER_UP
+  //    and/or a small handful of subsequent lone MOVEs).
   // While armed:
   //    - if any of the bugging ids' x,y appears to be its anchor, change it to its previous value
-  // The pattern that disarms the fixer is either:
-  //    - a new different arming
-  //    - if a participating id experiences the same x,y twice in a row
-  //      that is *not* the respective anchor psoition, then the bug isn't happening; disarm
-  //      [ARGH! currently that doesn't seem reliable :-( ]
+  // A pattern that disarms the fixer is either:
+  //    - if a participating id experiences the same x,y twice in a row in a MOVE
+  //      that is *not* the respective anchor position, then the bug isn't happening; disarm.
+  //      EXCEPT don't do this if it's history-less MOVE, since that has been observed
+  //      to give false alarms.
   // Note, we do *not* disarm the fixer on:
   //     - additional pointers down or up (that doesn't affect the bug)
   //     - when a bugging id goes POINTER_UP, that id stops participating in the bug,
   //       but the bug can still effect the other one(s), both on that POINTER_UP event itself
   //       and on subsequent events, generally for only about 1/10 of a second, but who knows.
 
+  // TODO: remove this, I think the simpler one does it
   private static class FixerState {
     private final static int STATE_DISARMED = 0;
     private final static int STATE_ARMING = 1;
@@ -961,7 +944,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     { Arrays.fill(mCurrentY, Float.NaN); }
     { Arrays.fill(mForbiddenX, Float.NaN); }
     { Arrays.fill(mForbiddenY, Float.NaN); }
-    private int[] idsWithForbiddens() {
+    private int[] buggingIds() {
       int n = 0;
       for (int id = 0; id < MAX_FINGERS; ++id) {
         if (!Float.isNaN(mForbiddenX[id])) {
@@ -995,7 +978,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
 
     StringBuilder annotationOrNull = annotationsOrNull!=null ? new StringBuilder() : null; // CBB: maybe wasteful since most lines don't get annotated
 
-    if (annotationOrNull != null) annotationOrNull.append(STRINGIFY_COMPACT(mSimplerFixerState.idsWithForbiddens()));
+    if (annotationOrNull != null) annotationOrNull.append(STRINGIFY_COMPACT(mSimplerFixerState.buggingIds()));
 
     final int action = unfixed.getActionMasked();
     final int actionIndex = unfixed.getActionIndex();
@@ -1009,13 +992,16 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       mSimplerFixerState.mForbiddenX[actionId] = Float.NaN;
       mSimplerFixerState.mForbiddenY[actionId] = Float.NaN;
     } else if (action == ACTION_POINTER_DOWN) {
-      if (annotationOrNull != null) annotationOrNull.append("(FORBIDDING id "+actionId+" to go to "+pointerCoords[actionIndex].x+","+pointerCoords[actionIndex].y+")");
-      mSimplerFixerState.mForbiddenX[actionId] = pointerCoords[actionIndex].x;
-      mSimplerFixerState.mForbiddenY[actionId] = pointerCoords[actionIndex].y;
-      // In the case that there was exactly one previous pointer down,
-      // that pointer's forbidden is not known until the end of the next MOVE packet.
-      if (pointerCount == 2) {
-        mSimplerFixerState.mWhoNeedsForbidden = unfixed.getPointerId(1 - actionIndex);
+      if (pointerCount == 2 || mSimplerFixerState.mWhoNeedsForbidden != -1) {
+        if (annotationOrNull != null) annotationOrNull.append("(FORBIDDING id "+actionId+" to go to "+pointerCoords[actionIndex].x+","+pointerCoords[actionIndex].y+")");
+        mSimplerFixerState.mForbiddenX[actionId] = pointerCoords[actionIndex].x;
+        mSimplerFixerState.mForbiddenY[actionId] = pointerCoords[actionIndex].y;
+        // In the case that there was exactly one previous pointer down,
+        // that pointer's forbidden is not known until the end of the next MOVE packet.
+        if (pointerCount == 2) {
+          CHECK_EQ(mSimplerFixerState.mWhoNeedsForbidden, -1);
+          mSimplerFixerState.mWhoNeedsForbidden = unfixed.getPointerId(1 - actionIndex);
+        }
       }
     } else if (action == ACTION_MOVE || action == ACTION_POINTER_UP || action == ACTION_UP) {
       if (action == ACTION_POINTER_UP || action == ACTION_UP) {
@@ -1095,7 +1081,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       mSimplerFixerState.mCurrentY[id] = pointerCoords[index].y;
     }
 
-    if (annotationOrNull != null) annotationOrNull.append(STRINGIFY_COMPACT(mSimplerFixerState.idsWithForbiddens()));
+    if (annotationOrNull != null) annotationOrNull.append(STRINGIFY_COMPACT(mSimplerFixerState.buggingIds()));
 
     if (annotationsOrNull != null) {
       annotationsOrNull.add(annotationOrNull.toString());
