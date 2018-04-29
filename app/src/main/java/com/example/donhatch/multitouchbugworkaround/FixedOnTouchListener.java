@@ -246,7 +246,8 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     public static String dumpString(ArrayList<LogicalMotionEvent> list,
                                     String punctuationWhereDifferentFromOther,
                                     ArrayList<LogicalMotionEvent> other,
-                                    ArrayList<String> annotationsOrNull) {
+                                    ArrayList<String> annotationsOrNull,
+                                    boolean showAnnotations) {  // if false, use annotationsOrNull only for figuring out "+"/"-" marks
       final int verboseLevel = 0;  // 0: nothing, 1: in/out, 2: some gory details
       if (verboseLevel >= 1) Log.i(TAG, "in LogicalMotionEvent.dumpString("+list.size()+" logical events)");
       StringBuilder answer = new StringBuilder();
@@ -462,28 +463,6 @@ public class FixedOnTouchListener implements View.OnTouchListener {
               // whereas it would be nice to get it even in the other two cases.
               if (annotationLine != null) {
                 if (false) {  // old way
-                  if (annotationLine.startsWith("(ARMING:")) {
-                    int id0start = annotationLine.indexOf("id0=");
-                    CHECK_NE(id0start, -1);
-                    id0start += 4;
-                    final int id0end = annotationLine.indexOf(" ", id0start);
-                    CHECK_NE(id0end, -1);
-                    final int id0 = Integer.parseInt(annotationLine.substring(id0start, id0end));
-                    if (id0 == id) {
-                      punc += "@";
-                    }
-                  } else if (annotationLine.startsWith("(ARMED:")) {
-                    int id1start = annotationLine.indexOf("id1=");
-                    CHECK_NE(id1start, -1);
-                    id1start += 4;
-                    final int id1end = annotationLine.indexOf(" ", id1start);
-                    CHECK_NE(id1end, -1);
-                    final int id1 = Integer.parseInt(annotationLine.substring(id1start, id1end));
-                    if (id1 == id) {
-                      punc += "@";
-                    }
-                  }
-                } else if (true) {
                   // Extract <id> from "<id> just went down" or "ARMED: theAlreadyDownOne=<id>" if any,
                   // in which case an anchor was established here.
                   // CBB: this is a twisted way of doing this logic.  is there a cleaner way?
@@ -500,6 +479,34 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                       punc += "@";  // this is the anchor
                     }
                   }
+                } else {
+                  {
+                    Matcher matcher = mStaticForbiddenEstablishedPattern.matcher(annotationLine);
+                    if (matcher.find()) {
+                      int idThatJustWentDown = Integer.parseInt(matcher.group("id"));
+                      if (idThatJustWentDown == id) {
+                        punc += "+";  // "this is now the forbidden x,y for this id"
+                      }
+                    }
+                  }
+                  {
+                    Matcher matcher = mStaticForbiddenReleasedPattern.matcher(annotationLine);
+                    while (matcher.find()) {
+                      int idThatJustWentDown = Integer.parseInt(matcher.group("id"));
+                      if (idThatJustWentDown == id) {
+                        punc += "-";  // "releasing the forbidden x,y for this id"
+                      }
+                    }
+                  }
+                  {
+                    Matcher matcher = mStaticForbiddenAlmostReleasedPattern.matcher(annotationLine);
+                    while (matcher.find()) {
+                      int idThatJustWentDown = Integer.parseInt(matcher.group("id"));
+                      if (idThatJustWentDown == id) {
+                        punc += ".";  // "almost releasing the forbidden x,y for this id"
+                      }
+                    }
+                  }
                 }
               }
 
@@ -511,7 +518,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         }
         answer.append(lineBuilder);
         answer.append("\n");
-        if (annotationLine != null && annotationLine.length() > 0) {
+        if (showAnnotations && annotationLine != null && annotationLine.length() > 0) {
           answer.append(annotationLine);
           answer.append("\n");
         }
@@ -519,8 +526,12 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       if (verboseLevel >= 1) Log.i(TAG, "out LogicalMotionEvent.dumpString("+list.size()+" logical events)");
       return answer.toString();
     }  // dump
-    final static Pattern mStaticJustWentDownPattern = Pattern.compile(" (\\d+) just went down");  // fragile
-    final static Pattern mStaticAlreadyDownPattern = Pattern.compile("ARMED: theAlreadyDownOne=(\\d+)");  // very fragile
+
+    final static Pattern mStaticJustWentDownPattern = Pattern.compile(" (\\d+) just went down");  // fragile  // XXX GET RID
+    final static Pattern mStaticAlreadyDownPattern = Pattern.compile("ARMED: theAlreadyDownOne=(\\d+)");  // very fragile  // XXX GET RID
+    final static Pattern mStaticForbiddenEstablishedPattern = Pattern.compile("^\\(FORBIDDING( \\(delayed\\))? id (?<id>\\d+) ");  // fragile
+    final static Pattern mStaticForbiddenReleasedPattern = Pattern.compile("RELEASING id (?<id>\\d+) ");  // fragile
+    final static Pattern mStaticForbiddenAlmostReleasedPattern = Pattern.compile("NOT releasing id (?<id>\\d+) ");  // fragile
 
     // Argh!  Calling Log.i on the multiline dump string causes it to be truncated *very* early (like, dozens instead of hundreds).
     // So don't do that; split it, instead.
@@ -764,7 +775,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           throw new AssertionError(e);
         }
         if (parsed != null) {
-          String dumpStringOut = dumpString(parsed, /*punctuationWhereDifferentFromOther=*/null, /*other=*/null, /*annotationsOrNull=*/null);
+          String dumpStringOut = dumpString(parsed, /*punctuationWhereDifferentFromOther=*/null, /*other=*/null, /*annotationsOrNull=*/null, /*showAnnotations=*/false);
 
           Log.i(TAG, "          parseDump succeeded!");
           Log.i(TAG, "          Here's it back out:");
@@ -946,6 +957,30 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     private float[] mForbiddenX = new float[MAX_FINGERS]; // indexed by id
     private float[] mForbiddenY = new float[MAX_FINGERS]; // indexed by id
     private int mWhoNeedsForbidden = -1;  // id that was down when a second pointer went down, whose forbidden position isn't yet known.
+    { Arrays.fill(mCurrentX, Float.NaN); }
+    { Arrays.fill(mCurrentY, Float.NaN); }
+    { Arrays.fill(mForbiddenX, Float.NaN); }
+    { Arrays.fill(mForbiddenY, Float.NaN); }
+    private int[] idsWithForbiddens() {
+      int n = 0;
+      for (int id = 0; id < MAX_FINGERS; ++id) {
+        if (!Float.isNaN(mForbiddenX[id])) {
+          CHECK(!Float.isNaN(mForbiddenY[id]));
+          n++;
+        } else {
+          CHECK(Float.isNaN(mForbiddenY[id]));
+        }
+      }
+      final int[] answer = new int[n];
+      int i = 0;
+      for (int id = 0; id < MAX_FINGERS; ++id) {
+        if (!Float.isNaN(mForbiddenX[id])) {
+          answer[i++] = id;
+        }
+      }
+      CHECK_EQ(i, n);
+      return answer;
+    }
   };
   private SIMPLERFixerState mSimplerFixerState = new SIMPLERFixerState();
   private void SIMPLERcorrectPointerCoordsUsingState(
@@ -960,6 +995,8 @@ public class FixedOnTouchListener implements View.OnTouchListener {
 
     StringBuilder annotationOrNull = annotationsOrNull!=null ? new StringBuilder() : null; // CBB: maybe wasteful since most lines don't get annotated
 
+    if (annotationOrNull != null) annotationOrNull.append(STRINGIFY_COMPACT(mSimplerFixerState.idsWithForbiddens()));
+
     final int action = unfixed.getActionMasked();
     final int actionIndex = unfixed.getActionIndex();
     final int actionId = unfixed.getPointerId(actionIndex);
@@ -972,7 +1009,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       mSimplerFixerState.mForbiddenX[actionId] = Float.NaN;
       mSimplerFixerState.mForbiddenY[actionId] = Float.NaN;
     } else if (action == ACTION_POINTER_DOWN) {
-      if (annotationOrNull != null) annotationOrNull.append("(FORBIDDING id "+actionId+" to go to "+pointerCoords[actionIndex].x+","+pointerCoords[actionIndex].x+")");
+      if (annotationOrNull != null) annotationOrNull.append("(FORBIDDING id "+actionId+" to go to "+pointerCoords[actionIndex].x+","+pointerCoords[actionIndex].y+")");
       mSimplerFixerState.mForbiddenX[actionId] = pointerCoords[actionIndex].x;
       mSimplerFixerState.mForbiddenY[actionId] = pointerCoords[actionIndex].y;
       // In the case that there was exactly one previous pointer down,
@@ -981,21 +1018,30 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         mSimplerFixerState.mWhoNeedsForbidden = unfixed.getPointerId(1 - actionIndex);
       }
     } else if (action == ACTION_MOVE || action == ACTION_POINTER_UP || action == ACTION_UP) {
-      if (action == ACTION_MOVE
-       && mSimplerFixerState.mWhoNeedsForbidden != -1
-       && historyIndex == historySize) {
-        final int index = unfixed.findPointerIndex(mSimplerFixerState.mWhoNeedsForbidden);
-        CHECK_NE(index, -1);
-        if (annotationOrNull != null) annotationOrNull.append("(FORBIDDING (delayed) id "+actionId+" to go to "+pointerCoords[actionIndex].x+","+pointerCoords[actionIndex].x+")");
-        mSimplerFixerState.mForbiddenX[mSimplerFixerState.mWhoNeedsForbidden] = pointerCoords[index].x;
-        mSimplerFixerState.mForbiddenY[mSimplerFixerState.mWhoNeedsForbidden] = pointerCoords[index].y;
-        mSimplerFixerState.mWhoNeedsForbidden = -1;
+      if (action == ACTION_POINTER_UP || action == ACTION_UP) {
+        if (mSimplerFixerState.mWhoNeedsForbidden != -1) {
+          // It wasn't arming after all.
+          if (annotationOrNull != null) annotationOrNull.append("(never mind, it wasn't arming after all. unforbidding everything.)");
+          mSimplerFixerState.mWhoNeedsForbidden = -1;
+          // Unforbid everything.
+          for (int id = 0; id < MAX_FINGERS; ++id) {
+            mSimplerFixerState.mForbiddenX[actionId] = Float.NaN;
+            mSimplerFixerState.mForbiddenY[actionId] = Float.NaN;
+          }
+        }
       }
-
       for (int index = 0; index < pointerCount; ++index) {
         final int id = unfixed.getPointerId(index);
-        if (!Float.isNaN(mSimplerFixerState.mForbiddenX[id])) {
-          // This pointer has a forbidden position.
+        if (id == mSimplerFixerState.mWhoNeedsForbidden) {
+          if (action == ACTION_MOVE
+           && historyIndex == historySize) {
+            if (annotationOrNull != null) annotationOrNull.append("(FORBIDDING (delayed) id "+mSimplerFixerState.mWhoNeedsForbidden+" to go to "+pointerCoords[index].x+","+pointerCoords[index].y+")");
+            mSimplerFixerState.mForbiddenX[mSimplerFixerState.mWhoNeedsForbidden] = pointerCoords[index].x;
+            mSimplerFixerState.mForbiddenY[mSimplerFixerState.mWhoNeedsForbidden] = pointerCoords[index].y;
+            mSimplerFixerState.mWhoNeedsForbidden = -1;
+          }
+        } else if (!Float.isNaN(mSimplerFixerState.mForbiddenX[id])) {
+          // This pointer has a forbidden position (that wasn't just now established).
           if (pointerCoords[index].x == mSimplerFixerState.mForbiddenX[id]
            && pointerCoords[index].x == mSimplerFixerState.mForbiddenX[id]) {
             // This pointer moved to (or stayed still at) its forbidden position.
@@ -1016,7 +1062,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             // Q: should we also require it's the primary (i.e. last, i.e. non-history) sub-event in the MOVE packet?  I think that's the only case I've observed;  think about what's the safe course of acetion here.
             if (action == ACTION_MOVE
              && pointerCoords[index].x == mSimplerFixerState.mCurrentX[id]
-             && pointerCoords[index].y == mSimplerFixerState.mCurrentX[id]) {
+             && pointerCoords[index].y == mSimplerFixerState.mCurrentY[id]) {
               if (historySize == 0) {
                 // Woops! No history.
                 // This may be a false alarm-- I have seen cases
@@ -1027,15 +1073,15 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                 // another instance of this criterion anyway).
                 // (Well, except when there's only one remaining pointer down,
                 // in which case we'll can be considered bugging indefinitely anyway; oh well!)
-                if (annotationOrNull != null) annotationOrNull.append("(NOT RELEASING id "+actionId+" even though it stayed stationary at a non-forbidden x,y, sice no history which sometimes means false alarm)");
+                if (annotationOrNull != null) annotationOrNull.append("(NOT releasing id "+id+" even though it stayed stationary at a non-forbidden x,y, sice no history which sometimes means false alarm)");
               } else {
-                if (annotationOrNull != null) annotationOrNull.append("(RELEASING id "+actionId+" because it stayed stationary at a non-forbidden x,y; I think it wasn't bugging or is no longer)");
+                if (annotationOrNull != null) annotationOrNull.append("(RELEASING id "+id+" because it stayed stationary at a non-forbidden x,y; I think it wasn't bugging or is no longer)");
                 mSimplerFixerState.mForbiddenX[id] = Float.NaN;
                 mSimplerFixerState.mForbiddenY[id] = Float.NaN;
               }
             }  // stationary at non-forbidden x,y
           }  // not at forbidden x,y
-        }  // if there was a forbidden position
+        }  // if this id already had a forbidden position
       }  // for index
       // end of case MOVE or POINTER_UP or UP
     } else {
@@ -1048,6 +1094,8 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       mSimplerFixerState.mCurrentX[id] = pointerCoords[index].x;
       mSimplerFixerState.mCurrentY[id] = pointerCoords[index].y;
     }
+
+    if (annotationOrNull != null) annotationOrNull.append(STRINGIFY_COMPACT(mSimplerFixerState.idsWithForbiddens()));
 
     if (annotationsOrNull != null) {
       annotationsOrNull.add(annotationOrNull.toString());
@@ -1332,17 +1380,20 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             mLogicalMotionEventsSinceFirstDown,
             /*punctuationWhereDifferentFromOther=*/"?",
             /*other=*/mFixedLogicalMotionEventsSinceFirstDown,
-            /*annotationsOrNull=*/null);
+            /*annotationsOrNull=*/null,
+            /*showAnnotations=*/false);
           String duringString = LogicalMotionEvent.dumpString(
             mLogicalMotionEventsSinceFirstDown,
             /*punctuationWhereDifferentFromOther=*/"?",
             /*other=*/mFixedLogicalMotionEventsSinceFirstDown,
-            mAnnotationsOrNull);
+            mAnnotationsOrNull,
+            /*showAnnotations=*/true);
           String afterString = LogicalMotionEvent.dumpString(
             mFixedLogicalMotionEventsSinceFirstDown,
             /*punctuationWhereDifferentFromOther=*/"!",
             /*other=*/mLogicalMotionEventsSinceFirstDown,
-            /*annotationsOrNull=*/null);
+            mAnnotationsOrNull,
+            /*showAnnotations=*/false);  // i.e. use the annotations only for figuring out "+" and "-" marks
 
           if (mTracePrintWriterOrNull != null) {
             mTracePrintWriterOrNull.println("      ===============================================================");
