@@ -941,10 +941,8 @@ public class FixedOnTouchListener implements View.OnTouchListener {
 
 
   private static class SIMPLERFixerState {
-    private float[] mCurrentXunfixed = new float[MAX_FINGERS];  // indexed by id
-    private float[] mCurrentYunfixed = new float[MAX_FINGERS];  // indexed by id
-    private float[] mCurrentXfixed = new float[MAX_FINGERS];  // indexed by id
-    private float[] mCurrentYfixed = new float[MAX_FINGERS];  // indexed by id
+    private float[] mCurrentX = new float[MAX_FINGERS];  // indexed by id
+    private float[] mCurrentY = new float[MAX_FINGERS];  // indexed by id
     private float[] mForbiddenX = new float[MAX_FINGERS]; // indexed by id
     private float[] mForbiddenY = new float[MAX_FINGERS]; // indexed by id
     private int mWhoNeedsForbidden = -1;  // id that was down when a second pointer went down, whose forbidden position isn't yet known.
@@ -968,26 +966,13 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     final int pointerCount = unfixed.getPointerCount();
     final int historySize = unfixed.getHistorySize();
 
-    // Update current unfixed state.
-    for (int index = 0; index < pointerCount; ++index) {
-      final int id = unfixed.getPointerId(index);
-      if (action == ACTION_MOVE || index == actionIndex) {
-        // this pointer may have moved.
-        mSimplerFixerState.mCurrentXunfixed[id] = pointerCoords[id].x;
-        mSimplerFixerState.mCurrentYunfixed[id] = pointerCoords[id].y;
-      } else {
-        // sanity check: this pointer should not have moved.
-        CHECK_EQ(pointerCoords[id].x, mSimplerFixerState.mCurrentXunfixed[id]);
-        CHECK_EQ(pointerCoords[id].y, mSimplerFixerState.mCurrentYunfixed[id]);
-      }
-    }
-
     if (action == ACTION_DOWN) {
       // Make sure state is pristine, nothing is forbidden.
       mSimplerFixerState.mWhoNeedsForbidden = -1;
       mSimplerFixerState.mForbiddenX[actionId] = Float.NaN;
       mSimplerFixerState.mForbiddenY[actionId] = Float.NaN;
     } else if (action == ACTION_POINTER_DOWN) {
+      if (annotationOrNull != null) annotationOrNull.append("(FORBIDDING id "+actionId+" to go to "+pointerCoords[actionIndex].x+","+pointerCoords[actionIndex].x+")");
       mSimplerFixerState.mForbiddenX[actionId] = pointerCoords[actionIndex].x;
       mSimplerFixerState.mForbiddenY[actionId] = pointerCoords[actionIndex].y;
       // In the case that there was exactly one previous pointer down,
@@ -1001,6 +986,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
        && historyIndex == historySize) {
         final int index = unfixed.findPointerIndex(mSimplerFixerState.mWhoNeedsForbidden);
         CHECK_NE(index, -1);
+        if (annotationOrNull != null) annotationOrNull.append("(FORBIDDING (delayed) id "+actionId+" to go to "+pointerCoords[actionIndex].x+","+pointerCoords[actionIndex].x+")");
         mSimplerFixerState.mForbiddenX[mSimplerFixerState.mWhoNeedsForbidden] = pointerCoords[index].x;
         mSimplerFixerState.mForbiddenY[mSimplerFixerState.mWhoNeedsForbidden] = pointerCoords[index].y;
         mSimplerFixerState.mWhoNeedsForbidden = -1;
@@ -1017,8 +1003,8 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             // (which may actually still be the forbidden position,
             // shortly after the forbidden position was established; that's fine).
             // Fix it.
-            pointerCoords[index].x = mSimplerFixerState.mCurrentXfixed[id];
-            pointerCoords[index].y = mSimplerFixerState.mCurrentYfixed[id];
+            pointerCoords[index].x = mSimplerFixerState.mCurrentX[id];
+            pointerCoords[index].y = mSimplerFixerState.mCurrentY[id];
           } else {
             // This pointer is not at its forbidden x,y.
             // There is a reliable (I believe) indicator
@@ -1029,8 +1015,8 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             // and it's in a MOVE packet with history.
             // Q: should we also require it's the primary (i.e. last, i.e. non-history) sub-event in the MOVE packet?  I think that's the only case I've observed;  think about what's the safe course of acetion here.
             if (action == ACTION_MOVE
-             && pointerCoords[index].x == mSimplerFixerState.mCurrentXfixed[id]
-             && pointerCoords[index].y == mSimplerFixerState.mCurrentXfixed[id]) {
+             && pointerCoords[index].x == mSimplerFixerState.mCurrentX[id]
+             && pointerCoords[index].y == mSimplerFixerState.mCurrentX[id]) {
               if (historySize == 0) {
                 // Woops! No history.
                 // This may be a false alarm-- I have seen cases
@@ -1041,7 +1027,9 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                 // another instance of this criterion anyway).
                 // (Well, except when there's only one remaining pointer down,
                 // in which case we'll can be considered bugging indefinitely anyway; oh well!)
+                if (annotationOrNull != null) annotationOrNull.append("(NOT RELEASING id "+actionId+" even though it stayed stationary at a non-forbidden x,y, sice no history which sometimes means false alarm)");
               } else {
+                if (annotationOrNull != null) annotationOrNull.append("(RELEASING id "+actionId+" because it stayed stationary at a non-forbidden x,y; I think it wasn't bugging or is no longer)");
                 mSimplerFixerState.mForbiddenX[id] = Float.NaN;
                 mSimplerFixerState.mForbiddenY[id] = Float.NaN;
               }
@@ -1054,18 +1042,11 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       // XXX Unexpected action-- what is it?
     }
 
-    // Update current fixed state.
+    // Update current state, for next time.
     for (int index = 0; index < pointerCount; ++index) {
       final int id = unfixed.getPointerId(index);
-      if (action == ACTION_MOVE || index == actionIndex) {
-        // this pointer may have moved.
-        mSimplerFixerState.mCurrentXfixed[id] = pointerCoords[id].x;
-        mSimplerFixerState.mCurrentYfixed[id] = pointerCoords[id].y;
-      } else {
-        // sanity check: this pointer should not have moved.
-        CHECK_EQ(pointerCoords[id].x, mSimplerFixerState.mCurrentXfixed[id]);
-        CHECK_EQ(pointerCoords[id].y, mSimplerFixerState.mCurrentYfixed[id]);
-      }
+      mSimplerFixerState.mCurrentX[id] = pointerCoords[index].x;
+      mSimplerFixerState.mCurrentY[id] = pointerCoords[index].y;
     }
 
     if (annotationsOrNull != null) {
@@ -1302,7 +1283,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             }
 
             SIMPLERcorrectPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords, mAnnotationsOrNull);
-            correctPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords, mAnnotationsOrNull);
+            //correctPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords, mAnnotationsOrNull);
 
             if (mAnnotationsOrNull != null) {
               // It must have appended exactly one annotation (possibly null)
