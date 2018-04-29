@@ -690,16 +690,10 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                   // CBB: this is a twisted way of doing this logic.  is there a cleaner way?
                   Matcher matcher = mStaticJustWentDownPattern.matcher(annotationLine);
                   if (!matcher.find()) {
-                    //annotationLine += ("[annotationLine didn't match mStaticJustWentDownMatcher]");
                     matcher = mStaticAlreadyDownPattern.matcher(annotationLine);
                     if (!matcher.find()) {
-                      //annotationLine += ("[annotationLine didn't match mStaticAlreadyDownMatcher]");
                       matcher = null;
-                    } else {
-                      //annotationLine += ("[annotationLine matched mStaticAlreadyDownMatcher]");
                     }
-                  } else {
-                    //annotationLine += ("[annotationLine matched mStaticJustWentDownMatcher]");
                   }
                   if (matcher != null) {
                     int idThatJustWentDown = Integer.parseInt(matcher.group(1));
@@ -1418,7 +1412,7 @@ NOT BUG:
                            whoJustWentDown, 
                            anchorX, anchorY);
       if (annotationOrNull != null) annotationOrNull.append("(ARMING: "+whoWasAlreadyDown+" was already down, "+whoJustWentDown+" just went down with anchor="+anchorX+","+anchorY+")");
-    } else if (mCurrentState == STATE_ARMING) {
+    } else if (mFixerState.mCurrentState == FixerState.STATE_ARMING) {
       if (action == ACTION_POINTER_DOWN) {
         final int whoJustWentDown = unfixed.getPointerId(actionIndex);
         final float anchorX = pointerCoords[actionIndex].x;
@@ -1431,10 +1425,11 @@ NOT BUG:
           final int theAlreadyDownIndex = unfixed.findPointerIndex(mFixerState.mTheAlreadyDownOne);
           CHECK_NE(theAlreadyDownIndex, -1);
           final float anchorX = pointerCoords[theAlreadyDownIndex].x;
-          final float anchorY = pointerCoords[theAlreadyDownIndex].x;
+          final float anchorY = pointerCoords[theAlreadyDownIndex].y;
+          if (annotationOrNull != null) annotationOrNull.append("(ARMED: theAlreadyDownOne="+mFixerState.mTheAlreadyDownOne+" with anchor="+anchorX+","+anchorY+")");  // must do this before calling arm, which clears mTheAlreadyDownOne
           mFixerState.armTheOneWhoWasAlreadyDown(anchorX, anchorY);
-          if (annotationOrNull != null) annotationOrNull.append("(ARMED: theAlreadyDownOne="+mFixerState.mTheAlreadyDownOne+" with anchor="+anchorX+","+anchorY+")");
         } else {
+          if (annotationOrNull != null) annotationOrNull.append("(in historical sub-event of what may be an arming event)");
           // We're in a historical sub-event of what may be the arming event.  Do nothing special.
         }
       } else {
@@ -1443,7 +1438,7 @@ NOT BUG:
         if (annotationOrNull != null) annotationOrNull.append("(DISARMED because didn't see continuation of arming sequence)");
         mFixerState.disarmAll();
       }
-    } else if (mCurrentState == STATE_ARMED) {  // i.e. if was already armed (not just now got armed)
+    } else if (mFixerState.mCurrentState == FixerState.STATE_ARMED) {  // i.e. if was already armed (not just now got armed)
       for (int index = 0; index < pointerCount; ++index) {
         final int id = unfixed.getPointerId(index);
         if (!Float.isNaN(mFixerState.mAnchorXs[id])) {
@@ -1473,16 +1468,16 @@ NOT BUG:
               //    but I'll err on the side of assuming it's still bugging (when really not bugging,
               //    we'll get evidence of not bugging soon enough anyway).
               if (action != ACTION_UP && action != ACTION_MOVE) {
-                if (annotationOrNull != null) annotationOrNull.append("(NOT DISARMING id "+id+" on rogue stay-the-same on action="+actionToString(action)+"("+unfixed.getPointerId(actionIndex)+")");
+                if (annotationOrNull != null) annotationOrNull.append("(NOT DISARMING id "+id+" on rogue stay-the-same at non-anchor on action="+actionToString(action)+"("+unfixed.getPointerId(actionIndex)+")");
               } else {
-                if (annotationOrNull != null) annotationOrNull.append("(DISARMING id "+id+" because it stayed the same and is *not* the anchor.  I think bug isn't happening here (or isn't happening any more here))");
+                if (annotationOrNull != null) annotationOrNull.append("(DISARMING id "+id+" because it stayed the same and is *not* the anchor "+mFixerState.mAnchorXs[id]+","+mFixerState.mAnchorYs[id]+".  I think bug isn't happening here (or isn't happening any more here))");
                 mFixerState.disarmOne(id);
               }
             }
           }
         }
       }
-    }  // mCurrentState == STATE_ARMED
+    }  // mFixerState.mCurrentState == FixerState.STATE_ARMED
 
     if (mFixerState.mCurrentState != FixerState.STATE_DISARMED) {
       // Remember all current coords (original or corrected)
