@@ -10,6 +10,9 @@
 // TODO: investigate whether I can get ACTION_CANCEL and/or ACTION_OUTSIDE.
 // TODO: for screenshot, have a fake-ish mode that decimates to some fraction of the spines
 // BUG: look for "XXX I've seen this fail" in PaintView.java-- that is, got DOWN or POINTER_DOWN when we thought it was down already.  Oh hmm, maybe I miss events sometimes?
+//
+// Conjecture: the delayed forbid id is always greater than the others
+// Conjecture: if any other POINTER_DOWN(id) with id > the delayed forbid id happens at the same time as the other POINTER_DOWNs, the bug won't happen
 
 package com.example.donhatch.multitouchbugworkaround;
 
@@ -813,11 +816,14 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     private float[] mCurrentY = new float[MAX_FINGERS];  // indexed by id
     private float[] mForbiddenX = new float[MAX_FINGERS]; // indexed by id
     private float[] mForbiddenY = new float[MAX_FINGERS]; // indexed by id
+    private long[] fixCount = new long[MAX_FINGERS]; // indexed by id
     private int mWhoNeedsForbidden = -1;  // id that was down when a second pointer went down, whose forbidden position isn't yet known.
     { Arrays.fill(mCurrentX, Float.NaN); }
     { Arrays.fill(mCurrentY, Float.NaN); }
     { Arrays.fill(mForbiddenX, Float.NaN); }
     { Arrays.fill(mForbiddenY, Float.NaN); }
+
+    // Notion of which ids are bugging for internal use.
     private int[] buggingIdsInternalSlow() {
       int n = 0;
       for (int id = 0; id < MAX_FINGERS; ++id) {
@@ -838,13 +844,46 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       CHECK_EQ(i, n);
       return answer;
     }
-    // Don't expose our inner idea of current bugging ids, since it's overly alarmist.
-    // While arming, which is speculative, return empty.
-    // CBB: argh, even with this fudge, it's still speculative and alarmist :-(
+    // Notion of which ids are bugging for external use.  Less alarmist.
     private int[] buggingIdsExternalSlow() {
-      return mWhoNeedsForbidden != -1 ? new int[] {} : buggingIdsInternalSlow();
+      // While arming, which is speculative, return empty.
+      if (mWhoNeedsForbidden != -1) return new int[] {};
+
+      final int threshold = 1;
+
+      int n = 0;
+      for (int id = 0; id < MAX_FINGERS; ++id) {
+        if (fixCount[id] >= threshold) {
+          n++;
+        }
+      }
+      final int[] answer = new int[n];
+      int i = 0;
+      for (int id = 0; id < MAX_FINGERS; ++id) {
+        if (fixCount[id] >= threshold) {
+          answer[i++] = id;
+        }
+      }
+      CHECK_EQ(i, n);
+      return answer;
     }
-  };
+    private String fixCountsString() {
+      final StringBuilder sb = new StringBuilder();
+      sb.append("{");
+      int n = 0;
+      for (int id = 0; id < MAX_FINGERS; ++id) {
+        if (fixCount[id] != 0) {
+          if (n++ == 0) sb.append(", ");
+          sb.append(id);
+          sb.append(":");
+          sb.append(fixCount[id]);
+        }
+      }
+      sb.append("}");
+      return sb.toString();
+    }
+  }
+
   private FixerState FixerState = new FixerState();
   private void correctPointerCoordsUsingState(
       MotionEvent unfixed,
@@ -872,11 +911,13 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       FixerState.mWhoNeedsForbidden = -1;
       FixerState.mForbiddenX[actionId] = Float.NaN;
       FixerState.mForbiddenY[actionId] = Float.NaN;
+      FixerState.fixCount[actionId] = 0L;
     } else if (action == ACTION_POINTER_DOWN) {
       if (pointerCount == 2 || FixerState.mWhoNeedsForbidden != -1) {
         if (annotationOrNull != null) annotationOrNull.append("(FORBIDDING id "+actionId+" to go to "+pointerCoords[actionIndex].x+","+pointerCoords[actionIndex].y+")");
         FixerState.mForbiddenX[actionId] = pointerCoords[actionIndex].x;
         FixerState.mForbiddenY[actionId] = pointerCoords[actionIndex].y;
+        FixerState.fixCount[actionId] = 0L;
         // In the case that there was exactly one previous pointer down,
         // that pointer's forbidden is not known until the end of the next MOVE packet.
         if (pointerCount == 2) {
@@ -892,10 +933,12 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           FixerState.mWhoNeedsForbidden = -1;
           // Unforbid everything.
           for (int id = 0; id < MAX_FINGERS; ++id) {
-            FixerState.mForbiddenX[actionId] = Float.NaN;
-            FixerState.mForbiddenY[actionId] = Float.NaN;
+            FixerState.mForbiddenX[id] = Float.NaN;
+            FixerState.mForbiddenY[id] = Float.NaN;
+            FixerState.fixCount[id] = 0L;
           }
         }
+        // It might need correcting, so don't un-set things yet.
       }
       for (int index = 0; index < pointerCount; ++index) {
         final int id = unfixed.getPointerId(index);
@@ -905,6 +948,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             if (annotationOrNull != null) annotationOrNull.append("(FORBIDDING (delayed) id "+FixerState.mWhoNeedsForbidden+" to go to "+pointerCoords[index].x+","+pointerCoords[index].y+")");
             FixerState.mForbiddenX[FixerState.mWhoNeedsForbidden] = pointerCoords[index].x;
             FixerState.mForbiddenY[FixerState.mWhoNeedsForbidden] = pointerCoords[index].y;
+            FixerState.fixCount[FixerState.mWhoNeedsForbidden] = 0L;
             FixerState.mWhoNeedsForbidden = -1;
           }
         } else if (!Float.isNaN(FixerState.mForbiddenX[id])) {
@@ -916,8 +960,12 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             // (which may actually still be the forbidden position,
             // shortly after the forbidden position was established; that's fine).
             // Fix it.
-            pointerCoords[index].x = FixerState.mCurrentX[id];
-            pointerCoords[index].y = FixerState.mCurrentY[id];
+            if (pointerCoords[index].x != FixerState.mCurrentX[id]
+             || pointerCoords[index].y != FixerState.mCurrentY[id]) {
+              pointerCoords[index].x = FixerState.mCurrentX[id];
+              pointerCoords[index].y = FixerState.mCurrentY[id];
+              FixerState.fixCount[id]++;
+            }
           } else {
             // This pointer is not at its forbidden x,y.
             // There is a reliable (I believe) indicator
@@ -945,11 +993,22 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                 if (annotationOrNull != null) annotationOrNull.append("(RELEASING id "+id+" because it stayed stationary at a non-forbidden x,y; I think it wasn't bugging or is no longer)");
                 FixerState.mForbiddenX[id] = Float.NaN;
                 FixerState.mForbiddenY[id] = Float.NaN;
+                FixerState.fixCount[id] = 0L;
               }
             }  // stationary at non-forbidden x,y
           }  // not at forbidden x,y
         }  // if this id already had a forbidden position
       }  // for index
+
+      if (action == ACTION_POINTER_UP || action == ACTION_UP) {
+        if (!Float.isNaN(FixerState.mForbiddenX[actionId])) {
+          if (annotationOrNull != null) annotationOrNull.append("(RELEASING id "+actionId+" on "+actionToString(action)+", after possibly fixing)");
+          FixerState.mForbiddenX[actionId] = Float.NaN;
+          FixerState.mForbiddenY[actionId] = Float.NaN;
+          FixerState.fixCount[actionId] = 0L;
+        }
+      }
+
       // end of case MOVE or POINTER_UP or UP
     } else {
       // XXX Unexpected action-- what is it?
