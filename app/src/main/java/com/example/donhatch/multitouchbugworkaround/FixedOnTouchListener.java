@@ -253,10 +253,15 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                                     String punctuationWhereDifferentFromOther,
                                     ArrayList<LogicalMotionEvent> other,
                                     ArrayList<String> annotationsOrNull,
-                                    boolean showAnnotations) {  // if false, use annotationsOrNull only for figuring out "+"/"-" marks
+                                    boolean showAnnotations,  // if false, use annotationsOrNull only for figuring out "+"/"-" marks
+                                    ArrayList<ForbidRecord> forbidRecordsOrNull) {
       final int verboseLevel = 0;  // 0: nothing, 1: in/out, 2: some gory details
       if (verboseLevel >= 1) Log.i(TAG, "in LogicalMotionEvent.dumpString("+list.size()+" logical events)");
       StringBuilder answer = new StringBuilder();
+      //answer.append("[forbidRecords="+STRINGIFY(forbidRecordsOrNull)+"]\n");  // if I need to debug this
+
+      int iNextForbidRecord = 0;
+      ForbidRecord nextForbidRecord = forbidRecordsOrNull!=null && !forbidRecordsOrNull.isEmpty() ? forbidRecordsOrNull.get(0) : null;
 
       int n = list.size();
 
@@ -468,7 +473,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
               // Note that we only get this information if we have annotations,
               // whereas it would be nice to get it even in the other two cases.
               if (annotationLine != null) {
-                if (true) {
+                if (false) {
                   {
                     Matcher matcher = mStaticForbiddenEstablishedPattern.matcher(annotationLine);
                     if (matcher.find()) {
@@ -495,6 +500,15 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                         punc += ".";  // "almost releasing the forbidden x,y for this id"
                       }
                     }
+                  }
+                }
+                if (true) {
+                  if (nextForbidRecord != null && i == nextForbidRecord.index && id == nextForbidRecord.id) {
+                    final int increment = nextForbidRecord.increment;
+                    punc += increment<0 ? "-" : increment>0 ? "+" : ".";
+
+                    iNextForbidRecord++;
+                    nextForbidRecord = (iNextForbidRecord < forbidRecordsOrNull.size() ? forbidRecordsOrNull.get(iNextForbidRecord) : null);
                   }
                 }
               }
@@ -762,7 +776,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           throw new AssertionError(e);
         }
         if (parsed != null) {
-          String dumpStringOut = dumpString(parsed, /*punctuationWhereDifferentFromOther=*/null, /*other=*/null, /*annotationsOrNull=*/null, /*showAnnotations=*/false);
+          String dumpStringOut = dumpString(parsed, /*punctuationWhereDifferentFromOther=*/null, /*other=*/null, /*annotationsOrNull=*/null, /*showAnnotations=*/false, /*forbidRecordsOrNull=*/null);
 
           Log.i(TAG, "          parseDump succeeded!");
           Log.i(TAG, "          Here's it back out:");
@@ -895,6 +909,9 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       this.id = id;
       this.increment = increment;
     }
+    public String toString() {
+      return "[index:"+index+" id:"+id+" incr="+increment+"]";
+    }
   }
 
   private FixerState mFixerState = new FixerState();
@@ -911,6 +928,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
 
     CHECK_EQ(annotationsOrNull!=null, forbidRecordsOrNull!=null);
     StringBuilder annotationOrNull = annotationsOrNull!=null ? new StringBuilder() : null; // CBB: maybe wasteful since most lines don't get annotated
+    final int indexForForbidRecord = annotationsOrNull.size();
 
     // If annotation ends up nonempty, we'll prepend before/after bugging ids to it.
     final int[] buggingIdsBefore = annotationsOrNull!=null ? mFixerState.buggingIdsInternalSlow() : null;
@@ -931,7 +949,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       if (pointerCount == 2 || mFixerState.mWhoNeedsForbidden != -1) {
         if (annotationsOrNull != null) {
           annotationOrNull.append("(FORBIDDING id "+actionId+" to go to "+pointerCoords[actionIndex].x+","+pointerCoords[actionIndex].y+")");
-          forbidRecordsOrNull.add(new ForbidRecord(/*index=*/-1, /*id=*/actionId, /*increment=*/+1));
+          forbidRecordsOrNull.add(new ForbidRecord(/*index=*/indexForForbidRecord, /*id=*/actionId, /*increment=*/+1));
         }
         mFixerState.mForbiddenX[actionId] = pointerCoords[actionIndex].x;
         mFixerState.mForbiddenY[actionId] = pointerCoords[actionIndex].y;
@@ -959,7 +977,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
               mFixerState.fixCount[id] = 0L;
               if (annotationsOrNull != null) {
                 annotationOrNull.append("(RELEASING id "+id+" along with everyone else");
-                forbidRecordsOrNull.add(new ForbidRecord(/*index=*/-1, /*id=*/id, /*increment=*/-1));
+                forbidRecordsOrNull.add(new ForbidRecord(/*index=*/indexForForbidRecord, /*id=*/id, /*increment=*/-1));
               }
             }
           }
@@ -973,7 +991,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
            && historyIndex == historySize) {
             if (annotationsOrNull != null) {
               annotationOrNull.append("(FORBIDDING (delayed) id "+mFixerState.mWhoNeedsForbidden+" to go to "+pointerCoords[index].x+","+pointerCoords[index].y+")");
-              forbidRecordsOrNull.add(new ForbidRecord(/*index=*/-1, /*id=*/id, /*increment=*/+1));
+              forbidRecordsOrNull.add(new ForbidRecord(/*index=*/indexForForbidRecord, /*id=*/id, /*increment=*/+1));
             }
             mFixerState.mForbiddenX[mFixerState.mWhoNeedsForbidden] = pointerCoords[index].x;
             mFixerState.mForbiddenY[mFixerState.mWhoNeedsForbidden] = pointerCoords[index].y;
@@ -1019,12 +1037,12 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                 // in which case we'll can be considered bugging indefinitely anyway; oh well!)
                 if (annotationsOrNull != null) {
                   annotationOrNull.append("(NOT releasing id "+id+" even though it stayed stationary at a non-forbidden x,y, sice no history which sometimes means false alarm)");
-                  forbidRecordsOrNull.add(new ForbidRecord(/*index=*/-1, /*id=*/id, /*increment=*/0));
+                  forbidRecordsOrNull.add(new ForbidRecord(/*index=*/indexForForbidRecord, /*id=*/id, /*increment=*/0));
                 }
               } else {
                 if (annotationsOrNull != null) {
                   annotationOrNull.append("(RELEASING id "+id+" because it stayed stationary at a non-forbidden x,y; I think it wasn't bugging or is no longer)");
-                  forbidRecordsOrNull.add(new ForbidRecord(/*index=*/-1, /*id=*/id, /*increment=*/-1));
+                  forbidRecordsOrNull.add(new ForbidRecord(/*index=*/indexForForbidRecord, /*id=*/id, /*increment=*/-1));
                 }
                 mFixerState.mForbiddenX[id] = Float.NaN;
                 mFixerState.mForbiddenY[id] = Float.NaN;
@@ -1039,7 +1057,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         if (!Float.isNaN(mFixerState.mForbiddenX[actionId])) {
           if (annotationsOrNull != null) {
             annotationOrNull.append("(RELEASING id "+actionId+" on "+actionToString(action)+", after possibly fixing)");
-            forbidRecordsOrNull.add(new ForbidRecord(/*index=*/-1, /*id=*/actionId, /*increment=*/-1));
+            forbidRecordsOrNull.add(new ForbidRecord(/*index=*/indexForForbidRecord, /*id=*/actionId, /*increment=*/-1));
           }
           mFixerState.mForbiddenX[actionId] = Float.NaN;
           mFixerState.mForbiddenY[actionId] = Float.NaN;
@@ -1161,19 +1179,22 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             /*punctuationWhereDifferentFromOther=*/"?",
             /*other=*/mFixedLogicalMotionEventsSinceFirstDown,
             /*annotationsOrNull=*/null,
-            /*showAnnotations=*/false);
+            /*showAnnotations=*/false,
+            /*forbidRecords=*/mForbidRecordsOrNull);
           String duringString = LogicalMotionEvent.dumpString(
             mLogicalMotionEventsSinceFirstDown,
             /*punctuationWhereDifferentFromOther=*/"?",
             /*other=*/mFixedLogicalMotionEventsSinceFirstDown,
             mAnnotationsOrNull,
-            /*showAnnotations=*/true);
+            /*showAnnotations=*/true,
+            /*forbidRecords=*/mForbidRecordsOrNull);
           String afterString = LogicalMotionEvent.dumpString(
             mFixedLogicalMotionEventsSinceFirstDown,
             /*punctuationWhereDifferentFromOther=*/"!",
             /*other=*/mLogicalMotionEventsSinceFirstDown,
             mAnnotationsOrNull,
-            /*showAnnotations=*/false);  // i.e. use the annotations only for figuring out "+" and "-" marks
+            /*showAnnotations=*/false,  // i.e. use the annotations only for figuring out "+" and "-" marks   XXX but we can now use forbid records for that
+            /*forbidRecords=*/mForbidRecordsOrNull);
           long t1 = System.nanoTime();
 
           if (mTracePrintWriterOrNull != null) {
@@ -1197,6 +1218,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           }
           if (mAnnotationsOrNull != null) {
             mAnnotationsOrNull.clear();
+            mForbidRecordsOrNull.clear();
           }
         }
 
