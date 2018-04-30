@@ -851,14 +851,15 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       int historyIndex,
       long eventTime,
       MotionEvent.PointerCoords pointerCoords[],
-      ArrayList<String> annotationsOrNull  // if not null, we append one item.
+      ArrayList<String> annotationsOrNull  // if not null, we append exactly one item.
       ) {
     final int verboseLevel = 0;
     if (verboseLevel >= 1) Log.i(TAG, "        in correctPointerCoordsUsingState(historyIndex="+historyIndex+"/"+unfixed.getHistorySize()+", eventTime="+(eventTime-unfixed.getDownTime())/1000.+")");
 
     StringBuilder annotationOrNull = annotationsOrNull!=null ? new StringBuilder() : null; // CBB: maybe wasteful since most lines don't get annotated
 
-    if (annotationOrNull != null) annotationOrNull.append(STRINGIFY_COMPACT(FixerState.buggingIdsInternalSlow()));
+    // If annotation ends up nonempty, we'll prepend before/after bugging ids to it.
+    final int[] buggingIdsBefore = annotationsOrNull!=null ? FixerState.buggingIdsInternalSlow() : null;
 
     final int action = unfixed.getActionMasked();
     final int actionIndex = unfixed.getActionIndex();
@@ -961,10 +962,13 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       FixerState.mCurrentY[id] = pointerCoords[index].y;
     }
 
-    if (annotationOrNull != null) annotationOrNull.append(STRINGIFY_COMPACT(FixerState.buggingIdsInternalSlow()));
-
     if (annotationsOrNull != null) {
-      annotationsOrNull.add(annotationOrNull.toString());
+      if (annotationOrNull.length() > 0) {
+        final int[] buggingIdsAfter = FixerState.buggingIdsInternalSlow();
+        annotationsOrNull.add(STRINGIFY_COMPACT(buggingIdsBefore)+" " + annotationOrNull.toString() + " "+STRINGIFY_COMPACT(buggingIdsAfter));
+      } else {
+        annotationsOrNull.add(annotationOrNull.toString());
+      }
     }
 
     if (verboseLevel >= 1) Log.i(TAG, "        out correctPointerCoordsUsingState(historyIndex="+historyIndex+"/"+unfixed.getHistorySize()+", eventTime="+(eventTime-unfixed.getDownTime())/1000.+")");
