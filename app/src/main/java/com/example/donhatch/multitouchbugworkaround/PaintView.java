@@ -170,6 +170,7 @@ public class PaintView extends FrameLayout {
           // Before returning, query the fixer to find out
           // which ids are now bugging.
           final int[] buggingIds = buggingIds();
+          buggingTextView.setText("bugging: "+STRINGIFY(buggingIds));
           if (buggingIds.length > mMaxSinceLastClear) {
             mMaxSinceLastClear = buggingIds.length;
             maxSinceLastClearTextView.setText("max since last clear: "+mMaxSinceLastClear+"  ");
