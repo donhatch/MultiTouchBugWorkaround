@@ -25,25 +25,21 @@ import static android.view.MotionEvent.ACTION_POINTER_UP;
 import static android.view.MotionEvent.ACTION_UP;
 import static android.view.MotionEvent.ACTION_CANCEL;
 import android.view.View;
-import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
-import java.util.regex.Pattern;
-import java.util.regex.Matcher;
 
 import static com.example.donhatch.multitouchbugworkaround.CHECK.*;
 import static com.example.donhatch.multitouchbugworkaround.STRINGIFY.STRINGIFY;
 
 public class FixedOnTouchListener implements View.OnTouchListener {
 
-  private static final String TAG = MultiTouchBugWorkaroundActivity.class.getSimpleName();  // XXX
+  private static final String TAG = FixedOnTouchListener.class.getSimpleName();
 
-  // If caller sets these, tracing info will be appended to them
+  // If caller sets these, tracing info will be appended to them on each onTouch.
   public ArrayList<String> mAnnotationsOrNull = null;
   public ArrayList<ForbidRecord> mForbidRecordsOrNull = null;
 
-  public View.OnTouchListener wrapped = null;
+  private View.OnTouchListener wrapped = null;
   public FixedOnTouchListener(View.OnTouchListener wrapped) {
     this.wrapped = wrapped;
   }

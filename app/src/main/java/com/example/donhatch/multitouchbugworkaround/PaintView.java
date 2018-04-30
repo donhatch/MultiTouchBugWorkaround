@@ -49,7 +49,7 @@ import static com.example.donhatch.multitouchbugworkaround.STRINGIFY.STRINGIFY;
 // https://gist.github.com/ErikHellman/6069322
 public class PaintView extends FrameLayout {
 
-  private static final String TAG = MultiTouchBugWorkaroundActivity.class.getSimpleName();
+  private static final String TAG = FixedOnTouchListener.class.getSimpleName();
 
   public static final int MAX_FINGERS = 10;
   public static final float STROKE_WIDTH = 6.0f;

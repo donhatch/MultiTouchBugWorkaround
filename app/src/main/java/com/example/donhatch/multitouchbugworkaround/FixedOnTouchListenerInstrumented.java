@@ -2,8 +2,6 @@
 //
 // https://android-review.googlesource.com/c/platform/frameworks/native/+/640606/
 //
-// TODO: allow querying number-of-bugging-pointers, either via callback or by querying the listener
-// TODO: ui that displays, e.g.   num buggy pointers: 1  max since last clear:  2  max ever: 3
 // TODO: be able to actually play back the stuff parsed from a dump file:
 //   - be able to convert from LogicalMotionEvent(s) to MotionEvent
 // TODO: dump the gesture if possible when an exception is being thrown?  more generally, when something rare and interesting happens that I want to trace
@@ -12,7 +10,7 @@
 // BUG: look for "XXX I've seen this fail" in PaintView.java-- that is, got DOWN or POINTER_DOWN when we thought it was down already.  Oh hmm, maybe I miss events sometimes?
 //
 // Conjecture: the delayed forbid id is always greater than the others.  (to test this, would have to have a robust measure of whether we think the bug is happening, though)
-// Conjecture: if any other POINTER_DOWN(id) with id > the delayed forbid id happens at the same time as the other POINTER_DOWNs, the bug won't happen
+// Conjecture: if any other POINTER_DOWN(id) with id > the delayed forbid id happens at the same time as the other POINTER_DOWNs, the bug won't happen  (I have no idea whether this is true, at the moment), and I'm probably messing it up in this area
 
 package com.example.donhatch.multitouchbugworkaround;
 
@@ -27,7 +25,6 @@ import static android.view.MotionEvent.ACTION_CANCEL;
 import android.view.View;
 import java.io.PrintWriter;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
@@ -36,10 +33,9 @@ import static com.example.donhatch.multitouchbugworkaround.CHECK.*;
 import static com.example.donhatch.multitouchbugworkaround.STRINGIFY.STRINGIFY;
 
 
-// TODO:  call this InstrumentedFixedOnTouchListener; the simpler inner one which is now called BareOnTouchListener will be the real one
 public class FixedOnTouchListenerInstrumented implements View.OnTouchListener {
 
-  private static final String TAG = MultiTouchBugWorkaroundActivity.class.getSimpleName();  // XXX
+  private static final String TAG = FixedOnTouchListener.class.getSimpleName();
 
   public View.OnTouchListener mWrappedWrapped = null;
   public FixedOnTouchListenerInstrumented(View.OnTouchListener wrappedWrapped) {

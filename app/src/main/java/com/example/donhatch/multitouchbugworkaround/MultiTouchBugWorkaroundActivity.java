@@ -28,7 +28,7 @@ import android.widget.LinearLayout;
 
 
 public class MultiTouchBugWorkaroundActivity extends AppCompatActivity {
-  private static final String TAG = MultiTouchBugWorkaroundActivity.class.getSimpleName();
+  private static final String TAG = FixedOnTouchListener.class.getSimpleName();
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
