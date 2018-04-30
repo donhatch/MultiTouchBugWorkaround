@@ -107,7 +107,7 @@ public class PaintView extends FrameLayout {
     };
     addView(mTheTouchableDrawable, new LayoutParams(LayoutParams.MATCH_PARENT,LayoutParams.MATCH_PARENT));
 
-    final TextView buggingTextView = new TextView(context) {{ setText("bugging: {}  "); }};
+    final TextView buggingTextView = new TextView(context) {{ setText("bugging: 0  {}  "); }};
     final TextView maxSinceLastClearTextView = new TextView(context) {{ setText("max since last clear: "+mMaxSinceLastClear+"  "); }};
     final TextView maxSinceLastConstructTextView = new TextView(context) {{ setText("max since last construct: "+mMaxSinceLastConstruct+"  "); }};
     final TextView maxSinceProcessStartedTextView = new TextView(context) {{ setText("max since process started: "+mMaxSinceProcessStarted+"  "); }};
@@ -186,7 +186,7 @@ public class PaintView extends FrameLayout {
           // Before returning, query the fixer to find out
           // which ids are now bugging.
           final int[] buggingIds = buggingIds();
-          buggingTextView.setText("bugging: "+STRINGIFY(buggingIds));
+          buggingTextView.setText("bugging: "+buggingIds.length+"  "+STRINGIFY(buggingIds));
           if (buggingIds.length > mMaxSinceLastClear) {
             mMaxSinceLastClear = buggingIds.length;
             maxSinceLastClearTextView.setText("max since last clear: "+mMaxSinceLastClear+"  ");
