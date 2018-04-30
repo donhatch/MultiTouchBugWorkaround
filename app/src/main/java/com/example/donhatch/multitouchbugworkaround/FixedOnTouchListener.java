@@ -47,12 +47,14 @@ public class FixedOnTouchListener implements View.OnTouchListener {
 
   private PrintWriter mTracePrintWriterOrNull = null;
   private ArrayList<String> mAnnotationsOrNull = null;
+  private ArrayList<ForbidRecord> mForbidRecordsOrNull = null;
   private ArrayList<String> mFixedAnnotationsOrNull = null;
   private ArrayList<LogicalMotionEvent> mLogicalMotionEventsSinceFirstDown = null;
   private ArrayList<LogicalMotionEvent> mFixedLogicalMotionEventsSinceFirstDown = null;
   public void setTracePrintWriter(PrintWriter tracePrintWriter) {
     this.mTracePrintWriterOrNull = tracePrintWriter;
     this.mAnnotationsOrNull = tracePrintWriter!=null ? new ArrayList<String>() : null;
+    this.mForbidRecordsOrNull = tracePrintWriter!=null ? new ArrayList<ForbidRecord>() : null;
     this.mLogicalMotionEventsSinceFirstDown = tracePrintWriter!=null ? new ArrayList<LogicalMotionEvent>() : null;
     this.mFixedLogicalMotionEventsSinceFirstDown = tracePrintWriter!=null ? new ArrayList<LogicalMotionEvent>() : null;
   }
@@ -882,6 +884,17 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       sb.append("}");
       return sb.toString();
     }
+  }  // class FixerState
+
+  private static class ForbidRecord {
+    public int index;
+    public int id;
+    public int increment;  // +1 for forbidding, -1 for unforbidding, 0 for close call
+    public ForbidRecord(int index, int id, int increment) {
+      this.index = index;
+      this.id = id;
+      this.increment = increment;
+    }
   }
 
   private FixerState mFixerState = new FixerState();
@@ -890,11 +903,13 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       int historyIndex,
       long eventTime,
       MotionEvent.PointerCoords pointerCoords[],
-      ArrayList<String> annotationsOrNull  // if not null, we append exactly one item.
+      ArrayList<String> annotationsOrNull,  // if not null, we append exactly one item.
+      ArrayList<ForbidRecord> forbidRecordsOrNull  // if not null, we append zero or more forbid records, whenever things get forbidden or unforbidden or close calls.
       ) {
     final int verboseLevel = 0;
     if (verboseLevel >= 1) Log.i(TAG, "        in correctPointerCoordsUsingState(historyIndex="+historyIndex+"/"+unfixed.getHistorySize()+", eventTime="+(eventTime-unfixed.getDownTime())/1000.+")");
 
+    CHECK_EQ(annotationsOrNull!=null, forbidRecordsOrNull!=null);
     StringBuilder annotationOrNull = annotationsOrNull!=null ? new StringBuilder() : null; // CBB: maybe wasteful since most lines don't get annotated
 
     // If annotation ends up nonempty, we'll prepend before/after bugging ids to it.
@@ -914,7 +929,10 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       mFixerState.fixCount[actionId] = 0L;
     } else if (action == ACTION_POINTER_DOWN) {
       if (pointerCount == 2 || mFixerState.mWhoNeedsForbidden != -1) {
-        if (annotationOrNull != null) annotationOrNull.append("(FORBIDDING id "+actionId+" to go to "+pointerCoords[actionIndex].x+","+pointerCoords[actionIndex].y+")");
+        if (annotationsOrNull != null) {
+          annotationOrNull.append("(FORBIDDING id "+actionId+" to go to "+pointerCoords[actionIndex].x+","+pointerCoords[actionIndex].y+")");
+          forbidRecordsOrNull.add(new ForbidRecord(/*index=*/-1, /*id=*/actionId, /*increment=*/+1));
+        }
         mFixerState.mForbiddenX[actionId] = pointerCoords[actionIndex].x;
         mFixerState.mForbiddenY[actionId] = pointerCoords[actionIndex].y;
         mFixerState.fixCount[actionId] = 0L;
@@ -929,13 +947,21 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       if (action == ACTION_POINTER_UP || action == ACTION_UP) {
         if (mFixerState.mWhoNeedsForbidden != -1) {
           // It wasn't arming after all.
-          if (annotationOrNull != null) annotationOrNull.append("(never mind, it wasn't arming after all. unforbidding everything.)");
+          if (annotationOrNull != null) {
+            annotationOrNull.append("(never mind, it wasn't arming after all. unforbidding everything.)");
+          }
           mFixerState.mWhoNeedsForbidden = -1;
           // Unforbid everything.
           for (int id = 0; id < MAX_FINGERS; ++id) {
-            mFixerState.mForbiddenX[id] = Float.NaN;
-            mFixerState.mForbiddenY[id] = Float.NaN;
-            mFixerState.fixCount[id] = 0L;
+            if (!Float.isNaN(mFixerState.mForbiddenX[id])) {
+              mFixerState.mForbiddenX[id] = Float.NaN;
+              mFixerState.mForbiddenY[id] = Float.NaN;
+              mFixerState.fixCount[id] = 0L;
+              if (annotationsOrNull != null) {
+                annotationOrNull.append("(RELEASING id "+id+" along with everyone else");
+                forbidRecordsOrNull.add(new ForbidRecord(/*index=*/-1, /*id=*/id, /*increment=*/-1));
+              }
+            }
           }
         }
         // It might need correcting, so don't un-set things yet.
@@ -945,7 +971,10 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         if (id == mFixerState.mWhoNeedsForbidden) {
           if (action == ACTION_MOVE
            && historyIndex == historySize) {
-            if (annotationOrNull != null) annotationOrNull.append("(FORBIDDING (delayed) id "+mFixerState.mWhoNeedsForbidden+" to go to "+pointerCoords[index].x+","+pointerCoords[index].y+")");
+            if (annotationsOrNull != null) {
+              annotationOrNull.append("(FORBIDDING (delayed) id "+mFixerState.mWhoNeedsForbidden+" to go to "+pointerCoords[index].x+","+pointerCoords[index].y+")");
+              forbidRecordsOrNull.add(new ForbidRecord(/*index=*/-1, /*id=*/id, /*increment=*/+1));
+            }
             mFixerState.mForbiddenX[mFixerState.mWhoNeedsForbidden] = pointerCoords[index].x;
             mFixerState.mForbiddenY[mFixerState.mWhoNeedsForbidden] = pointerCoords[index].y;
             mFixerState.fixCount[mFixerState.mWhoNeedsForbidden] = 0L;
@@ -988,9 +1017,15 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                 // another instance of this criterion anyway).
                 // (Well, except when there's only one remaining pointer down,
                 // in which case we'll can be considered bugging indefinitely anyway; oh well!)
-                if (annotationOrNull != null) annotationOrNull.append("(NOT releasing id "+id+" even though it stayed stationary at a non-forbidden x,y, sice no history which sometimes means false alarm)");
+                if (annotationsOrNull != null) {
+                  annotationOrNull.append("(NOT releasing id "+id+" even though it stayed stationary at a non-forbidden x,y, sice no history which sometimes means false alarm)");
+                  forbidRecordsOrNull.add(new ForbidRecord(/*index=*/-1, /*id=*/id, /*increment=*/0));
+                }
               } else {
-                if (annotationOrNull != null) annotationOrNull.append("(RELEASING id "+id+" because it stayed stationary at a non-forbidden x,y; I think it wasn't bugging or is no longer)");
+                if (annotationsOrNull != null) {
+                  annotationOrNull.append("(RELEASING id "+id+" because it stayed stationary at a non-forbidden x,y; I think it wasn't bugging or is no longer)");
+                  forbidRecordsOrNull.add(new ForbidRecord(/*index=*/-1, /*id=*/id, /*increment=*/-1));
+                }
                 mFixerState.mForbiddenX[id] = Float.NaN;
                 mFixerState.mForbiddenY[id] = Float.NaN;
                 mFixerState.fixCount[id] = 0L;
@@ -1002,7 +1037,10 @@ public class FixedOnTouchListener implements View.OnTouchListener {
 
       if (action == ACTION_POINTER_UP || action == ACTION_UP) {
         if (!Float.isNaN(mFixerState.mForbiddenX[actionId])) {
-          if (annotationOrNull != null) annotationOrNull.append("(RELEASING id "+actionId+" on "+actionToString(action)+", after possibly fixing)");
+          if (annotationsOrNull != null) {
+            annotationOrNull.append("(RELEASING id "+actionId+" on "+actionToString(action)+", after possibly fixing)");
+            forbidRecordsOrNull.add(new ForbidRecord(/*index=*/-1, /*id=*/actionId, /*increment=*/-1));
+          }
           mFixerState.mForbiddenX[actionId] = Float.NaN;
           mFixerState.mForbiddenY[actionId] = Float.NaN;
           mFixerState.fixCount[actionId] = 0L;
@@ -1072,8 +1110,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
               CHECK_EQ(mAnnotationsOrNull.size(), mFixedLogicalMotionEventsSinceFirstDown.size() + h);
             }
 
-            correctPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords, mAnnotationsOrNull);
-            //correctPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords, mAnnotationsOrNull);
+            correctPointerCoordsUsingState(unfixed, h, subEventTime, pointerCoords, mAnnotationsOrNull, mForbidRecordsOrNull);
 
             if (mAnnotationsOrNull != null) {
               // It must have appended exactly one annotation (possibly null)
