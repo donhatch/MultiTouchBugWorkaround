@@ -11,7 +11,7 @@
 // TODO: for screenshot, have a fake-ish mode that decimates to some fraction of the spines
 // BUG: look for "XXX I've seen this fail" in PaintView.java-- that is, got DOWN or POINTER_DOWN when we thought it was down already.  Oh hmm, maybe I miss events sometimes?
 //
-// Conjecture: the delayed forbid id is always greater than the others
+// Conjecture: the delayed forbid id is always greater than the others.  (to test this, would have to have a robust measure of whether we think the bug is happening, though)
 // Conjecture: if any other POINTER_DOWN(id) with id > the delayed forbid id happens at the same time as the other POINTER_DOWNs, the bug won't happen
 
 package com.example.donhatch.multitouchbugworkaround;
@@ -253,15 +253,15 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                                     String punctuationWhereDifferentFromOther,
                                     ArrayList<LogicalMotionEvent> other,
                                     ArrayList<String> annotationsOrNull,
-                                    boolean showAnnotations,  // if false, use annotationsOrNull only for figuring out "+"/"-" marks
                                     ArrayList<ForbidRecord> forbidRecordsOrNull) {
       final int verboseLevel = 0;  // 0: nothing, 1: in/out, 2: some gory details
       if (verboseLevel >= 1) Log.i(TAG, "in LogicalMotionEvent.dumpString("+list.size()+" logical events)");
       StringBuilder answer = new StringBuilder();
       //answer.append("[forbidRecords="+STRINGIFY(forbidRecordsOrNull)+"]\n");  // if I need to debug this
 
+      if (annotationsOrNull != null) CHECK(forbidRecordsOrNull != null);
       int iNextForbidRecord = 0;
-      ForbidRecord nextForbidRecord = forbidRecordsOrNull!=null && !forbidRecordsOrNull.isEmpty() ? forbidRecordsOrNull.get(0) : null;
+      ForbidRecord nextForbidRecord = (forbidRecordsOrNull!=null && !forbidRecordsOrNull.isEmpty()) ? forbidRecordsOrNull.get(0) : null;
 
       int n = list.size();
 
@@ -469,48 +469,12 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                 }
               }
 
-              // Sad super-expensive way of locating the anchors.
-              // Note that we only get this information if we have annotations,
-              // whereas it would be nice to get it even in the other two cases.
-              if (annotationLine != null) {
-                if (false) {
-                  {
-                    Matcher matcher = mStaticForbiddenEstablishedPattern.matcher(annotationLine);
-                    if (matcher.find()) {
-                      int idThatJustWentDown = Integer.parseInt(matcher.group("id"));
-                      if (idThatJustWentDown == id) {
-                        punc += "+";  // "this is now the forbidden x,y for this id"
-                      }
-                    }
-                  }
-                  {
-                    Matcher matcher = mStaticForbiddenReleasedPattern.matcher(annotationLine);
-                    while (matcher.find()) {
-                      int idThatJustWentDown = Integer.parseInt(matcher.group("id"));
-                      if (idThatJustWentDown == id) {
-                        punc += "-";  // "releasing the forbidden x,y for this id"
-                      }
-                    }
-                  }
-                  {
-                    Matcher matcher = mStaticForbiddenAlmostReleasedPattern.matcher(annotationLine);
-                    while (matcher.find()) {
-                      int idThatJustWentDown = Integer.parseInt(matcher.group("id"));
-                      if (idThatJustWentDown == id) {
-                        punc += ".";  // "almost releasing the forbidden x,y for this id"
-                      }
-                    }
-                  }
-                }
-                if (true) {
-                  if (nextForbidRecord != null && i == nextForbidRecord.index && id == nextForbidRecord.id) {
-                    final int increment = nextForbidRecord.increment;
-                    punc += increment<0 ? "-" : increment>0 ? "+" : ".";
+              if (nextForbidRecord != null && i == nextForbidRecord.index && id == nextForbidRecord.id) {
+                final int increment = nextForbidRecord.increment;
+                punc += increment<0 ? "-" : increment>0 ? "+" : ".";
 
-                    iNextForbidRecord++;
-                    nextForbidRecord = (iNextForbidRecord < forbidRecordsOrNull.size() ? forbidRecordsOrNull.get(iNextForbidRecord) : null);
-                  }
-                }
+                iNextForbidRecord++;
+                nextForbidRecord = (iNextForbidRecord < forbidRecordsOrNull.size() ? forbidRecordsOrNull.get(iNextForbidRecord) : null);
               }
 
               coordsString += (punc.length()==0 ? " " : punc);
@@ -521,7 +485,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
         }
         answer.append(lineBuilder);
         answer.append("\n");
-        if (showAnnotations && annotationLine != null && annotationLine.length() > 0) {
+        if (annotationLine != null && annotationLine.length() > 0) {
           answer.append(annotationLine);
           answer.append("\n");
         }
@@ -529,10 +493,6 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       if (verboseLevel >= 1) Log.i(TAG, "out LogicalMotionEvent.dumpString("+list.size()+" logical events)");
       return answer.toString();
     }  // dump
-
-    final static Pattern mStaticForbiddenEstablishedPattern = Pattern.compile("FORBIDDING( \\(delayed\\))? id (?<id>\\d+) ");  // fragile
-    final static Pattern mStaticForbiddenReleasedPattern = Pattern.compile("RELEASING id (?<id>\\d+) ");  // fragile
-    final static Pattern mStaticForbiddenAlmostReleasedPattern = Pattern.compile("NOT releasing id (?<id>\\d+) ");  // fragile
 
     // Argh!  Calling Log.i on the multiline dump string causes it to be truncated *very* early (like, dozens instead of hundreds).
     // So don't do that; split it, instead.
@@ -776,7 +736,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           throw new AssertionError(e);
         }
         if (parsed != null) {
-          String dumpStringOut = dumpString(parsed, /*punctuationWhereDifferentFromOther=*/null, /*other=*/null, /*annotationsOrNull=*/null, /*showAnnotations=*/false, /*forbidRecordsOrNull=*/null);
+          String dumpStringOut = dumpString(parsed, /*punctuationWhereDifferentFromOther=*/null, /*other=*/null, /*annotationsOrNull=*/null, /*forbidRecordsOrNull=*/null);
 
           Log.i(TAG, "          parseDump succeeded!");
           Log.i(TAG, "          Here's it back out:");
@@ -1179,21 +1139,18 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             /*punctuationWhereDifferentFromOther=*/"?",
             /*other=*/mFixedLogicalMotionEventsSinceFirstDown,
             /*annotationsOrNull=*/null,
-            /*showAnnotations=*/false,
             /*forbidRecords=*/mForbidRecordsOrNull);
           String duringString = LogicalMotionEvent.dumpString(
             mLogicalMotionEventsSinceFirstDown,
             /*punctuationWhereDifferentFromOther=*/"?",
             /*other=*/mFixedLogicalMotionEventsSinceFirstDown,
-            mAnnotationsOrNull,
-            /*showAnnotations=*/true,
+            /*annotationsOrNull=*/mAnnotationsOrNull,
             /*forbidRecords=*/mForbidRecordsOrNull);
           String afterString = LogicalMotionEvent.dumpString(
             mFixedLogicalMotionEventsSinceFirstDown,
             /*punctuationWhereDifferentFromOther=*/"!",
             /*other=*/mLogicalMotionEventsSinceFirstDown,
-            mAnnotationsOrNull,
-            /*showAnnotations=*/false,  // i.e. use the annotations only for figuring out "+" and "-" marks   XXX but we can now use forbid records for that
+            /*annotationsOrNull=*/null,
             /*forbidRecords=*/mForbidRecordsOrNull);
           long t1 = System.nanoTime();
 
