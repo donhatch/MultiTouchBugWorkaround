@@ -69,20 +69,6 @@ public class FixedOnTouchListenerInstrumented implements View.OnTouchListener {
     }
   }
 
-  // XXX REMOVE MOST OF THIS
-  final private static int MAX_FINGERS = 10;
-  final private float[] startYorig = new float[MAX_FINGERS];
-  final private float[] prevPrevXorig = new float[MAX_FINGERS];
-  final private float[] prevPrevYorig = new float[MAX_FINGERS];
-  final private float[] prevXorig = new float[MAX_FINGERS];
-  final private float[] prevYorig = new float[MAX_FINGERS];
-  final private float[] startXcorrected = new float[MAX_FINGERS];
-  final private float[] startYcorrected = new float[MAX_FINGERS];
-  final private float[] prevPrevXcorrected = new float[MAX_FINGERS];
-  final private float[] prevPrevYcorrected = new float[MAX_FINGERS];
-  final private float[] prevXcorrected = new float[MAX_FINGERS];
-  final private float[] prevYcorrected = new float[MAX_FINGERS];
-
   // STRINGIFY uses ", ", we want "," instead
   private static String STRINGIFY_COMPACT(int[] array) {
     StringBuilder sb = new StringBuilder("{");
@@ -318,57 +304,12 @@ public class FixedOnTouchListenerInstrumented implements View.OnTouchListener {
         }
       }
 
-      int idOfInterest = -1; // never zero.  if positive, either might be bugging or definitely bugging.
-      float xOfInterestForId0 = Float.NaN;  // if non-nan, might be bugging or definitely bugging.
-      float yOfInterestForId0 = Float.NaN;  // if non-nan, might be bugging or definitely bugging.
-      float xOfInterestForIdNonzero = Float.NaN;
-      float yOfInterestForIdNonzero = Float.NaN;
-      boolean knownToBeSafe = true;  // actually the same as idOfInterest==-1
-      boolean knownToBeBugging = false;
-      final float[] mostRecentNonSuspiciousX = new float[max_id_occurring+1];
-      final float[] mostRecentNonSuspiciousY = new float[max_id_occurring+1];
 
       long refTimeMillis = list.get(0).eventTimeMillis;
       if (annotationsOrNull != null) CHECK_EQ(annotationsOrNull.size(), n);
       for (int i = 0; i < n;  ++i) {
         LogicalMotionEvent e = list.get(i);
         String annotationLine = annotationsOrNull!=null ? annotationsOrNull.get(i) : null;
-
-        boolean justNowGotCoordsOfInterestForId0 = false;
-        boolean justNowGotCoordsOfInterestForIdNonzero = false;
-
-        if (e.action == ACTION_POINTER_DOWN
-         && e.actionId == 0
-         && e.ids.length == 2) {
-          CHECK_EQ(e.ids[0], 0);
-          // Might be bugging.  Yellow alert.
-          knownToBeSafe = false;
-          knownToBeBugging = false;
-          idOfInterest = e.ids[1];
-          xOfInterestForId0 = e.x(0);
-          yOfInterestForId0 = e.y(0);
-          xOfInterestForIdNonzero = Float.NaN;
-          yOfInterestForIdNonzero = Float.NaN;
-          justNowGotCoordsOfInterestForId0 = true;
-        }
-        // If the next packet is not a POINTER_UP(id1),
-        // then the next packet seems to always have size 2,
-        // and the last (i.e. non-historical) entry in it is the buggy non-0-id item, if any
-        if (i >= 2) {
-          LogicalMotionEvent ePrevPrev = list.get(i-2);
-          LogicalMotionEvent ePrev = list.get(i-1);
-          if (ePrevPrev.action == ACTION_POINTER_DOWN
-           && ePrevPrev.actionId == 0
-           && ePrevPrev.ids.length == 2
-           && ePrev.action == ACTION_MOVE) {
-            CHECK_GE(idOfInterest, 0);
-            CHECK_LT(idOfInterest, e.all_axis_values.length);
-            xOfInterestForIdNonzero = e.x(idOfInterest);
-            yOfInterestForIdNonzero = e.y(idOfInterest);
-            justNowGotCoordsOfInterestForIdNonzero = true;
-          }
-        }
-
         StringBuilder lineBuilder = new StringBuilder();
         long relativeTimeMillis = e.eventTimeMillis - refTimeMillis;
         if (e.isHistorical) CHECK_EQ(e.action, ACTION_MOVE);
