@@ -808,7 +808,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
 
   // Caller can query this to find out the current list of bugging ids.
   public int[] buggingIds() {
-    return FixerState.buggingIdsExternalSlow();  // I have mixed feelings about this.
+    return mFixerState.buggingIdsExternalSlow();  // I have mixed feelings about this.
   }
 
   private static class FixerState {
@@ -884,7 +884,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     }
   }
 
-  private FixerState FixerState = new FixerState();
+  private FixerState mFixerState = new FixerState();
   private void correctPointerCoordsUsingState(
       MotionEvent unfixed,
       int historyIndex,
@@ -898,7 +898,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     StringBuilder annotationOrNull = annotationsOrNull!=null ? new StringBuilder() : null; // CBB: maybe wasteful since most lines don't get annotated
 
     // If annotation ends up nonempty, we'll prepend before/after bugging ids to it.
-    final int[] buggingIdsBefore = annotationsOrNull!=null ? FixerState.buggingIdsInternalSlow() : null;
+    final int[] buggingIdsBefore = annotationsOrNull!=null ? mFixerState.buggingIdsInternalSlow() : null;
 
     final int action = unfixed.getActionMasked();
     final int actionIndex = unfixed.getActionIndex();
@@ -908,63 +908,63 @@ public class FixedOnTouchListener implements View.OnTouchListener {
 
     if (action == ACTION_DOWN) {
       // Make sure state is pristine, nothing is forbidden.
-      FixerState.mWhoNeedsForbidden = -1;
-      FixerState.mForbiddenX[actionId] = Float.NaN;
-      FixerState.mForbiddenY[actionId] = Float.NaN;
-      FixerState.fixCount[actionId] = 0L;
+      mFixerState.mWhoNeedsForbidden = -1;
+      mFixerState.mForbiddenX[actionId] = Float.NaN;
+      mFixerState.mForbiddenY[actionId] = Float.NaN;
+      mFixerState.fixCount[actionId] = 0L;
     } else if (action == ACTION_POINTER_DOWN) {
-      if (pointerCount == 2 || FixerState.mWhoNeedsForbidden != -1) {
+      if (pointerCount == 2 || mFixerState.mWhoNeedsForbidden != -1) {
         if (annotationOrNull != null) annotationOrNull.append("(FORBIDDING id "+actionId+" to go to "+pointerCoords[actionIndex].x+","+pointerCoords[actionIndex].y+")");
-        FixerState.mForbiddenX[actionId] = pointerCoords[actionIndex].x;
-        FixerState.mForbiddenY[actionId] = pointerCoords[actionIndex].y;
-        FixerState.fixCount[actionId] = 0L;
+        mFixerState.mForbiddenX[actionId] = pointerCoords[actionIndex].x;
+        mFixerState.mForbiddenY[actionId] = pointerCoords[actionIndex].y;
+        mFixerState.fixCount[actionId] = 0L;
         // In the case that there was exactly one previous pointer down,
         // that pointer's forbidden is not known until the end of the next MOVE packet.
         if (pointerCount == 2) {
-          CHECK_EQ(FixerState.mWhoNeedsForbidden, -1);
-          FixerState.mWhoNeedsForbidden = unfixed.getPointerId(1 - actionIndex);
+          CHECK_EQ(mFixerState.mWhoNeedsForbidden, -1);
+          mFixerState.mWhoNeedsForbidden = unfixed.getPointerId(1 - actionIndex);
         }
       }
     } else if (action == ACTION_MOVE || action == ACTION_POINTER_UP || action == ACTION_UP) {
       if (action == ACTION_POINTER_UP || action == ACTION_UP) {
-        if (FixerState.mWhoNeedsForbidden != -1) {
+        if (mFixerState.mWhoNeedsForbidden != -1) {
           // It wasn't arming after all.
           if (annotationOrNull != null) annotationOrNull.append("(never mind, it wasn't arming after all. unforbidding everything.)");
-          FixerState.mWhoNeedsForbidden = -1;
+          mFixerState.mWhoNeedsForbidden = -1;
           // Unforbid everything.
           for (int id = 0; id < MAX_FINGERS; ++id) {
-            FixerState.mForbiddenX[id] = Float.NaN;
-            FixerState.mForbiddenY[id] = Float.NaN;
-            FixerState.fixCount[id] = 0L;
+            mFixerState.mForbiddenX[id] = Float.NaN;
+            mFixerState.mForbiddenY[id] = Float.NaN;
+            mFixerState.fixCount[id] = 0L;
           }
         }
         // It might need correcting, so don't un-set things yet.
       }
       for (int index = 0; index < pointerCount; ++index) {
         final int id = unfixed.getPointerId(index);
-        if (id == FixerState.mWhoNeedsForbidden) {
+        if (id == mFixerState.mWhoNeedsForbidden) {
           if (action == ACTION_MOVE
            && historyIndex == historySize) {
-            if (annotationOrNull != null) annotationOrNull.append("(FORBIDDING (delayed) id "+FixerState.mWhoNeedsForbidden+" to go to "+pointerCoords[index].x+","+pointerCoords[index].y+")");
-            FixerState.mForbiddenX[FixerState.mWhoNeedsForbidden] = pointerCoords[index].x;
-            FixerState.mForbiddenY[FixerState.mWhoNeedsForbidden] = pointerCoords[index].y;
-            FixerState.fixCount[FixerState.mWhoNeedsForbidden] = 0L;
-            FixerState.mWhoNeedsForbidden = -1;
+            if (annotationOrNull != null) annotationOrNull.append("(FORBIDDING (delayed) id "+mFixerState.mWhoNeedsForbidden+" to go to "+pointerCoords[index].x+","+pointerCoords[index].y+")");
+            mFixerState.mForbiddenX[mFixerState.mWhoNeedsForbidden] = pointerCoords[index].x;
+            mFixerState.mForbiddenY[mFixerState.mWhoNeedsForbidden] = pointerCoords[index].y;
+            mFixerState.fixCount[mFixerState.mWhoNeedsForbidden] = 0L;
+            mFixerState.mWhoNeedsForbidden = -1;
           }
-        } else if (!Float.isNaN(FixerState.mForbiddenX[id])) {
+        } else if (!Float.isNaN(mFixerState.mForbiddenX[id])) {
           // This pointer has a forbidden position (that wasn't just now established).
-          if (pointerCoords[index].x == FixerState.mForbiddenX[id]
-           && pointerCoords[index].x == FixerState.mForbiddenX[id]) {
+          if (pointerCoords[index].x == mFixerState.mForbiddenX[id]
+           && pointerCoords[index].x == mFixerState.mForbiddenX[id]) {
             // This pointer moved to (or stayed still at) its forbidden position.
             // We think it meant to stay at its current position
             // (which may actually still be the forbidden position,
             // shortly after the forbidden position was established; that's fine).
             // Fix it.
-            if (pointerCoords[index].x != FixerState.mCurrentX[id]
-             || pointerCoords[index].y != FixerState.mCurrentY[id]) {
-              pointerCoords[index].x = FixerState.mCurrentX[id];
-              pointerCoords[index].y = FixerState.mCurrentY[id];
-              FixerState.fixCount[id]++;
+            if (pointerCoords[index].x != mFixerState.mCurrentX[id]
+             || pointerCoords[index].y != mFixerState.mCurrentY[id]) {
+              pointerCoords[index].x = mFixerState.mCurrentX[id];
+              pointerCoords[index].y = mFixerState.mCurrentY[id];
+              mFixerState.fixCount[id]++;
             }
           } else {
             // This pointer is not at its forbidden x,y.
@@ -976,8 +976,8 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             // and it's in a MOVE packet with history.
             // Q: should we also require it's the primary (i.e. last, i.e. non-history) sub-event in the MOVE packet?  I think that's the only case I've observed;  think about what's the safe course of acetion here.
             if (action == ACTION_MOVE
-             && pointerCoords[index].x == FixerState.mCurrentX[id]
-             && pointerCoords[index].y == FixerState.mCurrentY[id]) {
+             && pointerCoords[index].x == mFixerState.mCurrentX[id]
+             && pointerCoords[index].y == mFixerState.mCurrentY[id]) {
               if (historySize == 0) {
                 // Woops! No history.
                 // This may be a false alarm-- I have seen cases
@@ -991,9 +991,9 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                 if (annotationOrNull != null) annotationOrNull.append("(NOT releasing id "+id+" even though it stayed stationary at a non-forbidden x,y, sice no history which sometimes means false alarm)");
               } else {
                 if (annotationOrNull != null) annotationOrNull.append("(RELEASING id "+id+" because it stayed stationary at a non-forbidden x,y; I think it wasn't bugging or is no longer)");
-                FixerState.mForbiddenX[id] = Float.NaN;
-                FixerState.mForbiddenY[id] = Float.NaN;
-                FixerState.fixCount[id] = 0L;
+                mFixerState.mForbiddenX[id] = Float.NaN;
+                mFixerState.mForbiddenY[id] = Float.NaN;
+                mFixerState.fixCount[id] = 0L;
               }
             }  // stationary at non-forbidden x,y
           }  // not at forbidden x,y
@@ -1001,11 +1001,11 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       }  // for index
 
       if (action == ACTION_POINTER_UP || action == ACTION_UP) {
-        if (!Float.isNaN(FixerState.mForbiddenX[actionId])) {
+        if (!Float.isNaN(mFixerState.mForbiddenX[actionId])) {
           if (annotationOrNull != null) annotationOrNull.append("(RELEASING id "+actionId+" on "+actionToString(action)+", after possibly fixing)");
-          FixerState.mForbiddenX[actionId] = Float.NaN;
-          FixerState.mForbiddenY[actionId] = Float.NaN;
-          FixerState.fixCount[actionId] = 0L;
+          mFixerState.mForbiddenX[actionId] = Float.NaN;
+          mFixerState.mForbiddenY[actionId] = Float.NaN;
+          mFixerState.fixCount[actionId] = 0L;
         }
       }
 
@@ -1017,13 +1017,13 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     // Update current state, for next time.
     for (int index = 0; index < pointerCount; ++index) {
       final int id = unfixed.getPointerId(index);
-      FixerState.mCurrentX[id] = pointerCoords[index].x;
-      FixerState.mCurrentY[id] = pointerCoords[index].y;
+      mFixerState.mCurrentX[id] = pointerCoords[index].x;
+      mFixerState.mCurrentY[id] = pointerCoords[index].y;
     }
 
     if (annotationsOrNull != null) {
       if (annotationOrNull.length() > 0) {
-        final int[] buggingIdsAfter = FixerState.buggingIdsInternalSlow();
+        final int[] buggingIdsAfter = mFixerState.buggingIdsInternalSlow();
         annotationsOrNull.add(STRINGIFY_COMPACT(buggingIdsBefore)+" " + annotationOrNull.toString() + " "+STRINGIFY_COMPACT(buggingIdsAfter));
       } else {
         annotationsOrNull.add(annotationOrNull.toString());
