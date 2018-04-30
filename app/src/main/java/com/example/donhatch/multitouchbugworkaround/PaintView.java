@@ -52,10 +52,11 @@ public class PaintView extends FrameLayout {
 
   public static final int MAX_FINGERS = 10;
   public static final float STROKE_WIDTH = 6.0f;
-  public static final float SHADOW_RADIUS = 3.f;
+  //public static final float SHADOW_RADIUS = 3.f;  // looks cute but makes drawing take twice as long, which can be a bottleneck
+  public static final float SHADOW_RADIUS = 0.f;
 
   private Paint[] mFingerPaints = new Paint[MAX_FINGERS];;
-  private Paint mShadowPaint;
+  private Paint mShadowPaint = null;
   private RectF mPathBoundsScratch = new RectF();
   private boolean mShowUnfixed = true;
 
@@ -236,13 +237,15 @@ public class PaintView extends FrameLayout {
       // So instead, we just draw a shadow explicitly on every draw of the path.
     }
 
-    mShadowPaint = new Paint() {{
-      setAntiAlias(true);
-      setColor(0xffc0c0c0);  // CBB: same as background, should get from a common source
-      setStyle(Paint.Style.STROKE);
-      setStrokeWidth(STROKE_WIDTH + 2.0f*SHADOW_RADIUS);
-      setStrokeCap(Paint.Cap.BUTT);
-    }};
+    if (SHADOW_RADIUS > 0.f) {
+      mShadowPaint = new Paint() {{
+        setAntiAlias(true);
+        setColor(0xffc0c0c0);  // CBB: same as background, should get from a common source
+        setStyle(Paint.Style.STROKE);
+        setStrokeWidth(STROKE_WIDTH + 2.0f*SHADOW_RADIUS);
+        setStrokeCap(Paint.Cap.BUTT);
+      }};
+    }
 
     Log.i(TAG, "    out PaintView ctor");
   }
@@ -250,7 +253,9 @@ public class PaintView extends FrameLayout {
   private static void drawStuff(Canvas canvas, Stuff stuff, Paint shadowPaint) {
     CHECK_EQ(stuff.mPaths.size(), stuff.mCompletedPaints.size());
     for (int i = 0; i < stuff.mPaths.size(); ++i) {
-      canvas.drawPath(stuff.mPaths.get(i), shadowPaint);
+      if (shadowPaint != null) {
+        canvas.drawPath(stuff.mPaths.get(i), shadowPaint);
+      }
       canvas.drawPath(stuff.mPaths.get(i), stuff.mCompletedPaints.get(i));
     }
   }
@@ -272,7 +277,7 @@ public class PaintView extends FrameLayout {
     }
 
     if ((action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) && actionId < MAX_FINGERS) {
-      CHECK(stuff.mFingerPaths[actionId] == null);
+      CHECK(stuff.mFingerPaths[actionId] == null);   // XXX I've seen this fail!  How to debug?
       stuff.mFingerPaths[actionId] = new Path();
       if (verboseLevel >= 1) Log.i(TAG, "                  starting path "+actionId+": moveTo "+event.getX(actionIndex)+", "+event.getY(actionIndex));
       stuff.mFingerPaths[actionId].moveTo(event.getX(actionIndex), event.getY(actionIndex));

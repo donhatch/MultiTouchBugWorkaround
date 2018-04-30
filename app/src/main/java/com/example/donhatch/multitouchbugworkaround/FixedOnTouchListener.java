@@ -9,6 +9,7 @@
 // TODO: dump the gesture if possible when an exception is being thrown?  more generally, when something rare and interesting happens that I want to trace
 // TODO: investigate whether I can get ACTION_CANCEL and/or ACTION_OUTSIDE.
 // TODO: for screenshot, have a fake-ish mode that decimates to some fraction of the spines
+// BUG: look for "XXX I've seen this fail" in PaintView.java-- that is, got DOWN or POINTER_DOWN when we thought it was down already.  Oh hmm, maybe I miss events sometimes?
 
 package com.example.donhatch.multitouchbugworkaround;
 
@@ -462,24 +463,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
               // Note that we only get this information if we have annotations,
               // whereas it would be nice to get it even in the other two cases.
               if (annotationLine != null) {
-                if (false) {  // old way
-                  // Extract <id> from "<id> just went down" or "ARMED: theAlreadyDownOne=<id>" if any,
-                  // in which case an anchor was established here.
-                  // CBB: this is a twisted way of doing this logic.  is there a cleaner way?
-                  Matcher matcher = mStaticJustWentDownPattern.matcher(annotationLine);
-                  if (!matcher.find()) {
-                    matcher = mStaticAlreadyDownPattern.matcher(annotationLine);
-                    if (!matcher.find()) {
-                      matcher = null;
-                    }
-                  }
-                  if (matcher != null) {
-                    int idThatJustWentDown = Integer.parseInt(matcher.group(1));
-                    if (idThatJustWentDown == id) {
-                      punc += "@";  // this is the anchor
-                    }
-                  }
-                } else {
+                if (true) {
                   {
                     Matcher matcher = mStaticForbiddenEstablishedPattern.matcher(annotationLine);
                     if (matcher.find()) {
@@ -527,9 +511,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       return answer.toString();
     }  // dump
 
-    final static Pattern mStaticJustWentDownPattern = Pattern.compile(" (\\d+) just went down");  // fragile  // XXX GET RID
-    final static Pattern mStaticAlreadyDownPattern = Pattern.compile("ARMED: theAlreadyDownOne=(\\d+)");  // very fragile  // XXX GET RID
-    final static Pattern mStaticForbiddenEstablishedPattern = Pattern.compile("^\\(FORBIDDING( \\(delayed\\))? id (?<id>\\d+) ");  // fragile
+    final static Pattern mStaticForbiddenEstablishedPattern = Pattern.compile("FORBIDDING( \\(delayed\\))? id (?<id>\\d+) ");  // fragile
     final static Pattern mStaticForbiddenReleasedPattern = Pattern.compile("RELEASING id (?<id>\\d+) ");  // fragile
     final static Pattern mStaticForbiddenAlmostReleasedPattern = Pattern.compile("NOT releasing id (?<id>\\d+) ");  // fragile
 
@@ -1073,6 +1055,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       if (unfixed.getActionMasked() == ACTION_UP) {
 
         if (mTracePrintWriterOrNull != null) {
+          long t0 = System.nanoTime();
           String beforeString = LogicalMotionEvent.dumpString(
             mLogicalMotionEventsSinceFirstDown,
             /*punctuationWhereDifferentFromOther=*/"?",
@@ -1091,8 +1074,10 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             /*other=*/mLogicalMotionEventsSinceFirstDown,
             mAnnotationsOrNull,
             /*showAnnotations=*/false);  // i.e. use the annotations only for figuring out "+" and "-" marks
+          long t1 = System.nanoTime();
 
           if (mTracePrintWriterOrNull != null) {
+            long t0p = System.nanoTime();
             mTracePrintWriterOrNull.println("      ===============================================================");
             mTracePrintWriterOrNull.println("      LOGICAL MOTION EVENT SEQUENCE, BEFORE FIX:");
             mTracePrintWriterOrNull.print(beforeString);  // it ends with newline
@@ -1103,6 +1088,11 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             mTracePrintWriterOrNull.println("      LOGICAL MOTION EVENT SEQUENCE, AFTER FIX:");
             mTracePrintWriterOrNull.print(afterString);  // it ends with newline
             mTracePrintWriterOrNull.println("      ===============================================================");
+            long t1p = System.nanoTime();
+            long t0f = System.nanoTime();
+            mTracePrintWriterOrNull.flush();
+            long t1f = System.nanoTime();
+            mTracePrintWriterOrNull.println("      That took: dump:"+(t1-t0)/1e9+" print:"+(t1p-t0p)/1e9+" flush:"+(t1f-t0f)/1e9+" secs.");
             mTracePrintWriterOrNull.flush();
           }
           if (mAnnotationsOrNull != null) {
