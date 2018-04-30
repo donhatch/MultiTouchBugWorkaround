@@ -52,11 +52,21 @@ public class FixedOnTouchListener implements View.OnTouchListener {
   private ArrayList<LogicalMotionEvent> mLogicalMotionEventsSinceFirstDown = null;
   private ArrayList<LogicalMotionEvent> mFixedLogicalMotionEventsSinceFirstDown = null;
   public void setTracePrintWriter(PrintWriter tracePrintWriter) {
+    if (this.mTracePrintWriterOrNull != null) {
+      this.mTracePrintWriterOrNull.println("tracing stopped");
+      this.mTracePrintWriterOrNull.flush();
+    }
+
     this.mTracePrintWriterOrNull = tracePrintWriter;
     this.mAnnotationsOrNull = tracePrintWriter!=null ? new ArrayList<String>() : null;
     this.mForbidRecordsOrNull = tracePrintWriter!=null ? new ArrayList<ForbidRecord>() : null;
     this.mLogicalMotionEventsSinceFirstDown = tracePrintWriter!=null ? new ArrayList<LogicalMotionEvent>() : null;
     this.mFixedLogicalMotionEventsSinceFirstDown = tracePrintWriter!=null ? new ArrayList<LogicalMotionEvent>() : null;
+
+    if (this.mTracePrintWriterOrNull != null) {
+      this.mTracePrintWriterOrNull.println("tracing started");
+      this.mTracePrintWriterOrNull.flush();
+    }
   }
 
   // Note, MotionEvent has an actionToString(), but it takes an unmasked action;
@@ -170,6 +180,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
     }
     // Breaks motionEvent down into LogicalMotionEvents and appends them to list.
     public static void breakDown(MotionEvent motionEvent, ArrayList<LogicalMotionEvent> list) {
+      CHECK(list != null);
       final int action = motionEvent.getActionMasked();
       final int actionId = motionEvent.getPointerId(motionEvent.getActionIndex());
       final int pointerCount = motionEvent.getPointerCount();
@@ -888,7 +899,7 @@ public class FixedOnTouchListener implements View.OnTouchListener {
 
     CHECK_EQ(annotationsOrNull!=null, forbidRecordsOrNull!=null);
     StringBuilder annotationOrNull = annotationsOrNull!=null ? new StringBuilder() : null; // CBB: maybe wasteful since most lines don't get annotated
-    final int indexForForbidRecord = annotationsOrNull.size();
+    final int indexForForbidRecord = annotationsOrNull!=null ? annotationsOrNull.size() : -1;
 
     // If annotation ends up nonempty, we'll prepend before/after bugging ids to it.
     final int[] buggingIdsBefore = annotationsOrNull!=null ? mFixerState.buggingIdsInternalSlow() : null;
@@ -926,8 +937,10 @@ public class FixedOnTouchListener implements View.OnTouchListener {
             mFixerState.mWhoNeedsForbidden = unfixed.getPointerId(1 - actionIndex);
           }
         } else {
-          annotationOrNull.append("(NOT forbidding id "+actionId+" nor "+unfixed.getPointerId(1-actionIndex)+" because out of order)");
-          forbidRecordsOrNull.add(new ForbidRecord(/*index=*/indexForForbidRecord, /*id=*/actionId, /*increment=*/0));
+          if (annotationsOrNull != null) {
+            annotationOrNull.append("(NOT forbidding id "+actionId+" nor "+unfixed.getPointerId(1-actionIndex)+" because out of order)");
+            forbidRecordsOrNull.add(new ForbidRecord(/*index=*/indexForForbidRecord, /*id=*/actionId, /*increment=*/0));
+          }
           // CBB: abort arming sequence!  argh this sucks, am I now letting things through inconsistently?
         }
       }
@@ -1068,7 +1081,9 @@ public class FixedOnTouchListener implements View.OnTouchListener {
 
     try {
 
-      LogicalMotionEvent.breakDown(unfixed, mLogicalMotionEventsSinceFirstDown);  // for post-mortem analysis
+      if (mLogicalMotionEventsSinceFirstDown != null) {
+        LogicalMotionEvent.breakDown(unfixed, mLogicalMotionEventsSinceFirstDown);  // for post-mortem analysis
+      }
 
       boolean answer = false;
       {
@@ -1131,7 +1146,9 @@ public class FixedOnTouchListener implements View.OnTouchListener {
                              historicalMetaState);
             }
           }
-          LogicalMotionEvent.breakDown(fixed, mFixedLogicalMotionEventsSinceFirstDown);  // for post-mortem analysis
+          if (mFixedLogicalMotionEventsSinceFirstDown != null) {
+            LogicalMotionEvent.breakDown(fixed, mFixedLogicalMotionEventsSinceFirstDown);  // for post-mortem analysis
+          }
           answer = wrapped.onTouch(view, fixed);
         } finally {
           if (fixed != null) {
@@ -1189,8 +1206,8 @@ public class FixedOnTouchListener implements View.OnTouchListener {
           }
         }
 
-        mLogicalMotionEventsSinceFirstDown.clear();
-        mFixedLogicalMotionEventsSinceFirstDown.clear();
+        if (mLogicalMotionEventsSinceFirstDown != null) mLogicalMotionEventsSinceFirstDown.clear();
+        if (mFixedLogicalMotionEventsSinceFirstDown != null) mFixedLogicalMotionEventsSinceFirstDown.clear();
 
       }
       if (verboseLevel >= 2) Log.i(TAG, "    out FixedOnTouchListener onTouch, returning "+answer);

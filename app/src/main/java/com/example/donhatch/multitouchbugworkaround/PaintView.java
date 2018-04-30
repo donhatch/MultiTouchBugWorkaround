@@ -39,6 +39,7 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import java.io.FileNotFoundException;
+import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.HashMap;
 
@@ -61,6 +62,9 @@ public class PaintView extends FrameLayout {
   private boolean mShowUnfixed = true;
 
   private View mTheTouchableDrawable;
+  private FixedOnTouchListener mFixedOnTouchListener = null;
+  private PrintWriter mTracePrintWriter = null;
+  private boolean mTracing = false;  // togglable using checkbox
 
   private static class Stuff {
     private Path[] mFingerPaths = new Path[MAX_FINGERS];
@@ -134,6 +138,17 @@ public class PaintView extends FrameLayout {
             }
           });
         }});
+        addView(new CheckBox(context) {{
+          setText("trace to file");
+          setChecked(mTracing);
+          setOnCheckedChangeListener(new CheckBox.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+              mTracing = isChecked;
+              mFixedOnTouchListener.setTracePrintWriter(isChecked ? mTracePrintWriter : null);
+            }
+          });
+        }});
         addView(new TextView(context), new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT) {{
           weight = 1.f;
         }});
@@ -148,7 +163,7 @@ public class PaintView extends FrameLayout {
     }
 
 
-    mTheTouchableDrawable.setOnTouchListener(new FixedOnTouchListener(new View.OnTouchListener() {
+    mFixedOnTouchListener = new FixedOnTouchListener(new View.OnTouchListener() {
       @Override
       public boolean onTouch(View view, MotionEvent fixedEvent) {
         // This is our wrapped listener, after the fixer has done its fixing.
@@ -185,29 +200,34 @@ public class PaintView extends FrameLayout {
             }
           }
         }
-
         return answer;
       }
+    };
 
-      {
-        // See top of MultiTouchBugWorkaroundActivity.java for recipe on how to get this back out.
-        Log.i(TAG, "      YOU ARE HERE==============================================================================================================================================================================================================================================================================================================================================");
-        String traceFileName = "FixedOnTouchListener.trace.txt";
-        String traceFilePathNameIThink = context.getFilesDir().getAbsolutePath()+"/"+traceFileName;
-        java.io.FileOutputStream fileOutputStream = null;
-        try {
-          fileOutputStream = context.openFileOutput(traceFileName, 0);
-        } catch (FileNotFoundException e) {
-          throw new AssertionError("coudn't open file output "+traceFilePathNameIThink);
-        }
-        Log.i(TAG, "      setting fix trace fileOutputStream to:  "+traceFilePathNameIThink);
-        java.io.PrintWriter printWriter = new java.io.PrintWriter(fileOutputStream);
-        printWriter.write("hello world\n");
-        printWriter.flush();
-        this.setTracePrintWriter(printWriter);
+    // Initialize mTracePrintWriter, but don't hook it up to the listener yet.
+    {
+      // See top of MultiTouchBugWorkaroundActivity.java for recipe on how to get this back out.
+      Log.i(TAG, "      YOU ARE HERE==============================================================================================================================================================================================================================================================================================================================================");
+      String traceFileName = "FixedOnTouchListener.trace.txt";
+      String traceFilePathNameIThink = context.getFilesDir().getAbsolutePath()+"/"+traceFileName;
+      java.io.FileOutputStream fileOutputStream = null;
+      try {
+        fileOutputStream = context.openFileOutput(traceFileName, 0);
+      } catch (FileNotFoundException e) {
+        throw new AssertionError("coudn't open file output "+traceFilePathNameIThink);
       }
-    });
+      Log.i(TAG, "      setting fix trace fileOutputStream to:  "+traceFilePathNameIThink);
+      mTracePrintWriter = new java.io.PrintWriter(fileOutputStream);
+      mTracePrintWriter.write("hello world\n");
+      mTracePrintWriter.flush();
+    }
 
+    if (mTracing) {
+      mFixedOnTouchListener.setTracePrintWriter(mTracePrintWriter);
+    }
+
+    // TODO: delay this, see if I can catch it in the middle of a gesture
+    mTheTouchableDrawable.setOnTouchListener(mFixedOnTouchListener);
 
     final int colors[] = new int[] {
       Color.RED,
