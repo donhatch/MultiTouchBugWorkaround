@@ -62,7 +62,7 @@ public class PaintView extends FrameLayout {
   private boolean mShowUnfixed = true;
 
   private View mTheTouchableDrawable;
-  private FixedOnTouchListener mFixedOnTouchListener = null;
+  private FixedOnTouchListenerInstrumented mFixedOnTouchListener = null;
   private PrintWriter mTracePrintWriter = null;
   private boolean mTracing = false;  // togglable using checkbox
 
@@ -163,7 +163,7 @@ public class PaintView extends FrameLayout {
     }
 
 
-    mFixedOnTouchListener = new FixedOnTouchListener(new View.OnTouchListener() {
+    mFixedOnTouchListener = new FixedOnTouchListenerInstrumented(new View.OnTouchListener() {
       @Override
       public boolean onTouch(View view, MotionEvent fixedEvent) {
         // This is our wrapped listener, after the fixer has done its fixing.
