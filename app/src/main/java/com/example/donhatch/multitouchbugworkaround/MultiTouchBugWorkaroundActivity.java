@@ -30,6 +30,8 @@ import android.widget.LinearLayout;
 public class MultiTouchBugWorkaroundActivity extends AppCompatActivity {
   private static final String TAG = FixedOnTouchListener.class.getSimpleName();
 
+  private PaintView mThePaintView;
+
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     final int verboseLevel = 1;
@@ -37,17 +39,16 @@ public class MultiTouchBugWorkaroundActivity extends AppCompatActivity {
     super.onCreate(savedInstanceState);
 
     final Context context = getApplicationContext();
+    mThePaintView = new PaintView(context) {{
+      setBackgroundColor(0xffc0c0c0);
+    }};
     if (false) {
-      setContentView(new PaintView(context) {{
-        setBackgroundColor(0xffc0c0c0);
-      }});
+      setContentView(mThePaintView);
     } else {
       // I want to make it so it doesn't take up the whole screen, to see whether I can get an ACTION_OUTSIDE
       setContentView(new LinearLayout(context) {{
         setBackgroundColor(0xffc0c0c0);
-        addView(new PaintView(context) {{
-          setBackgroundColor(0xffc0c0c0);
-        }});
+        addView(mThePaintView);
       }});
     }
 
@@ -63,6 +64,15 @@ public class MultiTouchBugWorkaroundActivity extends AppCompatActivity {
     makeFullScreen();
 
     if (verboseLevel >= 1) Log.i(TAG, "out onCreate");
+  }
+
+  @Override protected void onStart() {
+    super.onStart();
+    mThePaintView.recordOnStart();
+  }
+  @Override protected void onResume() {
+    super.onResume();
+    mThePaintView.recordOnResume();
   }
 
   private void makeFullScreen() {

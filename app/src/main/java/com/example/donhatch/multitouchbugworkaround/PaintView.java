@@ -79,14 +79,26 @@ public class PaintView extends FrameLayout {
   private Stuff fixedStuff = new Stuff();
 
   private int mMaxSinceLastClear = 0;
-  private int mMaxSinceLastConstruct = 0;
-  private int mMaxSinceProcessStarted = 0;
+  private int mMaxSinceLastOnResume = 0;
+  private int mMaxSinceLastOnStart = 0;
+  private int mMaxSinceLastOnCreate = 0;
+  private static int mMaxSinceProcessStarted = 0;
+  private TextView mMaxSinceLastOnResumeTextView;
+  private TextView mMaxSinceLastOnStartTextView;
+  public void recordOnStart() {
+    mMaxSinceLastOnStart = 0;
+    mMaxSinceLastOnStartTextView.setText("max since last onStart(): "+mMaxSinceLastOnStart+"  ");  // CBB: method?
+  }
+  public void recordOnResume() {
+    mMaxSinceLastOnResume = 0;
+    mMaxSinceLastOnResumeTextView.setText("max since last onResume(): "+mMaxSinceLastOnResume+"  ");  // CBB: method?
+  }
 
   public PaintView(final Context context) {
     super(context);
     Log.i(TAG, "    in PaintView ctor");
 
-    mMaxSinceLastConstruct = 0;
+    mMaxSinceLastOnCreate = 0;  // there's no "record" callback for this; we assume construction is in onCreate
 
     mTheTouchableDrawable = new android.view.View(context) {
       @Override
@@ -109,8 +121,12 @@ public class PaintView extends FrameLayout {
 
     final TextView buggingTextView = new TextView(context) {{ setText("bugging: 0  {}  "); }};
     final TextView maxSinceLastClearTextView = new TextView(context) {{ setText("max since last clear: "+mMaxSinceLastClear+"  "); }};
-    final TextView maxSinceLastConstructTextView = new TextView(context) {{ setText("max since last construct: "+mMaxSinceLastConstruct+"  "); }};
+    final TextView maxSinceLastOnResumeTextView = new TextView(context) {{ setText("max since last onResume(): "+mMaxSinceLastOnResume+"  "); }};
+    final TextView maxSinceLastOnStartTextView = new TextView(context) {{ setText("max since last onStart(): "+mMaxSinceLastOnStart+"  "); }};
+    final TextView maxSinceLastOnCreateTextView = new TextView(context) {{ setText("max since last onCreate(): "+mMaxSinceLastOnCreate+"  "); }};
     final TextView maxSinceProcessStartedTextView = new TextView(context) {{ setText("max since process started: "+mMaxSinceProcessStarted+"  "); }};
+    mMaxSinceLastOnResumeTextView = maxSinceLastOnResumeTextView;
+    mMaxSinceLastOnStartTextView = maxSinceLastOnStartTextView;
     if (true) {
       addView(new LinearLayout(context) {{
         addView(new Button(context) {{
@@ -124,7 +140,7 @@ public class PaintView extends FrameLayout {
               fixedStuff.mCompletedPaints.clear();
               mTheTouchableDrawable.invalidate();
               mMaxSinceLastClear = 0;
-              maxSinceLastClearTextView.setText("max since last clear: "+mMaxSinceLastClear+"  ");  // CBB: method
+              maxSinceLastClearTextView.setText("max since last clear: "+mMaxSinceLastClear+"  ");  // CBB: method?
             }
           });
         }});
@@ -156,7 +172,9 @@ public class PaintView extends FrameLayout {
           setOrientation(VERTICAL);
           addView(buggingTextView);
           addView(maxSinceLastClearTextView);
-          addView(maxSinceLastConstructTextView);
+          addView(maxSinceLastOnResumeTextView);
+          addView(maxSinceLastOnStartTextView);
+          addView(maxSinceLastOnCreateTextView);
           addView(maxSinceProcessStartedTextView);
         }});
       }});
@@ -187,15 +205,24 @@ public class PaintView extends FrameLayout {
           // which ids are now bugging.
           final int[] buggingIds = buggingIds();
           buggingTextView.setText("bugging: "+buggingIds.length+"  "+STRINGIFY(buggingIds));
+          // CBB: this is nuts.
           if (buggingIds.length > mMaxSinceLastClear) {
             mMaxSinceLastClear = buggingIds.length;
             maxSinceLastClearTextView.setText("max since last clear: "+mMaxSinceLastClear+"  ");
-            if (buggingIds.length > mMaxSinceLastConstruct) {
-              mMaxSinceLastConstruct = buggingIds.length;
-              maxSinceLastConstructTextView.setText("max since last construct: "+mMaxSinceLastConstruct+"  ");
-              if (buggingIds.length > mMaxSinceProcessStarted) {
-                mMaxSinceProcessStarted = buggingIds.length;
-                maxSinceProcessStartedTextView.setText("max since process started: "+mMaxSinceProcessStarted+"  ");
+            if (buggingIds.length > mMaxSinceLastOnResume) {
+              mMaxSinceLastOnResume = buggingIds.length;
+              maxSinceLastOnResumeTextView.setText("max since last onResume(): "+mMaxSinceLastOnResume+"  ");
+              if (buggingIds.length > mMaxSinceLastOnStart) {
+                mMaxSinceLastOnStart = buggingIds.length;
+                maxSinceLastOnStartTextView.setText("max since last onStart(): "+mMaxSinceLastOnStart+"  ");
+                if (buggingIds.length > mMaxSinceLastOnCreate) {
+                  mMaxSinceLastOnCreate = buggingIds.length;
+                  maxSinceLastOnCreateTextView.setText("max since last construct: "+mMaxSinceLastOnCreate+"  ");
+                  if (buggingIds.length > mMaxSinceProcessStarted) {
+                    mMaxSinceProcessStarted = buggingIds.length;
+                    maxSinceProcessStartedTextView.setText("max since process started: "+mMaxSinceProcessStarted+"  ");
+                  }
+                }
               }
             }
           }
