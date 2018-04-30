@@ -32,8 +32,6 @@ import java.util.HashMap;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 
-import static com.example.donhatch.multitouchbugworkaround.FixedOnTouchListener.BareFixedOnTouchListener;  // XXX clean this up
-
 import static com.example.donhatch.multitouchbugworkaround.CHECK.*;
 import static com.example.donhatch.multitouchbugworkaround.STRINGIFY.STRINGIFY;
 
@@ -50,7 +48,7 @@ public class FixedOnTouchListenerInstrumented implements View.OnTouchListener {
 
   private PrintWriter mTracePrintWriterOrNull = null;
   private ArrayList<String> mAnnotationsOrNull = null;
-  private ArrayList<BareFixedOnTouchListener.ForbidRecord> mForbidRecordsOrNull = null;
+  private ArrayList<FixedOnTouchListener.ForbidRecord> mForbidRecordsOrNull = null;
   private ArrayList<LogicalMotionEvent> mLogicalMotionEventsSinceFirstDown = null;
   private ArrayList<LogicalMotionEvent> mFixedLogicalMotionEventsSinceFirstDown = null;
   public void setTracePrintWriter(PrintWriter tracePrintWriter) {
@@ -61,7 +59,7 @@ public class FixedOnTouchListenerInstrumented implements View.OnTouchListener {
 
     this.mTracePrintWriterOrNull = tracePrintWriter;
     this.mAnnotationsOrNull = tracePrintWriter!=null ? new ArrayList<String>() : null;
-    this.mForbidRecordsOrNull = tracePrintWriter!=null ? new ArrayList<BareFixedOnTouchListener.ForbidRecord>() : null;
+    this.mForbidRecordsOrNull = tracePrintWriter!=null ? new ArrayList<FixedOnTouchListener.ForbidRecord>() : null;
     this.mLogicalMotionEventsSinceFirstDown = tracePrintWriter!=null ? new ArrayList<LogicalMotionEvent>() : null;
     this.mFixedLogicalMotionEventsSinceFirstDown = tracePrintWriter!=null ? new ArrayList<LogicalMotionEvent>() : null;
 
@@ -71,19 +69,7 @@ public class FixedOnTouchListenerInstrumented implements View.OnTouchListener {
     }
   }
 
-  // Note, MotionEvent has an actionToString(), but it takes an unmasked action;
-  // we want to take an unmasked action.
-  public static String actionToString(int action) {
-    if (action == ACTION_DOWN) return "DOWN";
-    if (action == ACTION_POINTER_DOWN) return "POINTER_DOWN";
-    if (action == ACTION_MOVE) return "MOVE";
-    if (action == ACTION_POINTER_UP) return "POINTER_UP";
-    if (action == ACTION_UP) return "UP";
-    //if (action == ACTION_CANCEL) return "CANCEL";  // I've never seen this, I don't think
-    //if (action == ACTION_OUTSIDE) return "OUTSIDE";  // I've never seen this, I don't think
-    throw new AssertionError("unrecognized MotionEvent action "+action);
-  }
-
+  // XXX REMOVE MOST OF THIS
   final private static int MAX_FINGERS = 10;
   final private float[] startYorig = new float[MAX_FINGERS];
   final private float[] prevPrevXorig = new float[MAX_FINGERS];
@@ -223,7 +209,7 @@ public class FixedOnTouchListenerInstrumented implements View.OnTouchListener {
                                     String punctuationWhereDifferentFromOther,
                                     ArrayList<LogicalMotionEvent> other,
                                     ArrayList<String> annotationsOrNull,
-                                    ArrayList<BareFixedOnTouchListener.ForbidRecord> forbidRecordsOrNull) {
+                                    ArrayList<FixedOnTouchListener.ForbidRecord> forbidRecordsOrNull) {
       final int verboseLevel = 0;  // 0: nothing, 1: in/out, 2: some gory details
       if (verboseLevel >= 1) Log.i(TAG, "in LogicalMotionEvent.dumpString("+list.size()+" logical events)");
       StringBuilder answer = new StringBuilder();
@@ -232,7 +218,7 @@ public class FixedOnTouchListenerInstrumented implements View.OnTouchListener {
       if (other != null) CHECK_EQ(list.size(), other.size());
       if (annotationsOrNull != null) CHECK(forbidRecordsOrNull != null);
       int iNextForbidRecord = 0;
-      BareFixedOnTouchListener.ForbidRecord nextForbidRecord = (forbidRecordsOrNull!=null && !forbidRecordsOrNull.isEmpty()) ? forbidRecordsOrNull.get(0) : null;
+      FixedOnTouchListener.ForbidRecord nextForbidRecord = (forbidRecordsOrNull!=null && !forbidRecordsOrNull.isEmpty()) ? forbidRecordsOrNull.get(0) : null;
 
       int n = list.size();
 
@@ -392,7 +378,7 @@ public class FixedOnTouchListenerInstrumented implements View.OnTouchListener {
                                          relativeTimeMillis%1000,
                                          i, n,
                                          (e.action==ACTION_MOVE && e.isHistorical ? "" :
-                                         (actionToString(e.action)+(e.action==ACTION_MOVE?"  ":"("+e.actionId+")"))),
+                                         (FixedOnTouchListener.actionToString(e.action)+(e.action==ACTION_MOVE?"  ":"("+e.actionId+")"))),
                                          STRINGIFY_COMPACT(e.ids)));
         for (int id = 0; id < e.all_axis_values.length; ++id) {
           if (e.all_axis_values[id] == null) {
@@ -730,8 +716,8 @@ public class FixedOnTouchListenerInstrumented implements View.OnTouchListener {
     if (verboseLevel >= 1) Log.i(TAG, "    out FixedOnTouchListenerInstrumented.unitTest");
   }
 
-  // CBB: could this be expressed more straightforwardly by giving BareFixedOnTouchListener a callback (another secret member)?
-  private BareFixedOnTouchListener mBareFixedOnTouchListener = new BareFixedOnTouchListener(new View.OnTouchListener() {
+  // CBB: could this be expressed more straightforwardly by giving FixedOnTouchListener a callback (another secret member)?
+  private FixedOnTouchListener mFixedOnTouchListener = new FixedOnTouchListener(new View.OnTouchListener() {
     @Override
     public boolean onTouch(View view, MotionEvent fixedEvent) {
       boolean answer = mWrappedWrapped.onTouch(view, fixedEvent);
@@ -788,10 +774,10 @@ public class FixedOnTouchListenerInstrumented implements View.OnTouchListener {
       }
       return answer;
     }
-  });  // out specialized mBareFixedOnTouchListener with its interception of the fixed event
+  });  // out specialized mFixedOnTouchListener with its interception of the fixed event
 
   public int[] buggingIds() {
-    return mBareFixedOnTouchListener.buggingIds();
+    return mFixedOnTouchListener.buggingIds();
   }
 
   // Framework calls this with the original unfixed MotionEvent;
@@ -806,11 +792,11 @@ public class FixedOnTouchListenerInstrumented implements View.OnTouchListener {
         LogicalMotionEvent.breakDown(unfixedEvent, mLogicalMotionEventsSinceFirstDown);  // for post-mortem analysis
       }
 
-      mBareFixedOnTouchListener.mAnnotationsOrNull = mAnnotationsOrNull;
-      mBareFixedOnTouchListener.mForbidRecordsOrNull = mForbidRecordsOrNull;
-      boolean answer = mBareFixedOnTouchListener.onTouch(view, unfixedEvent);
-      mBareFixedOnTouchListener.mAnnotationsOrNull = null;
-      mBareFixedOnTouchListener.mForbidRecordsOrNull = null;
+      mFixedOnTouchListener.mAnnotationsOrNull = mAnnotationsOrNull;
+      mFixedOnTouchListener.mForbidRecordsOrNull = mForbidRecordsOrNull;
+      boolean answer = mFixedOnTouchListener.onTouch(view, unfixedEvent);
+      mFixedOnTouchListener.mAnnotationsOrNull = null;
+      mFixedOnTouchListener.mForbidRecordsOrNull = null;
 
 
       if (verboseLevel >= 2) Log.i(TAG, "    out FixedOnTouchListenerInstrumented onTouch, returning "+answer);

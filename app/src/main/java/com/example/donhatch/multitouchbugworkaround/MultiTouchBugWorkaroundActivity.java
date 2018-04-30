@@ -55,7 +55,7 @@ public class MultiTouchBugWorkaroundActivity extends AppCompatActivity {
       new Handler().postDelayed(new Runnable() {
         @Override
         public void run() {
-          FixedOnTouchListener.unitTest();
+          FixedOnTouchListenerInstrumented.unitTest();
         }
       }, 1500);  // after a delay, to wait for other noise to clear in logcat
     }
