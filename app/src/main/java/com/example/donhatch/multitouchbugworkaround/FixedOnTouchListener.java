@@ -907,18 +907,28 @@ public class FixedOnTouchListener implements View.OnTouchListener {
       mFixerState.fixCount[actionId] = 0L;
     } else if (action == ACTION_POINTER_DOWN) {
       if (pointerCount == 2 || mFixerState.mWhoNeedsForbidden != -1) {
-        if (annotationsOrNull != null) {
-          annotationOrNull.append("(FORBIDDING id "+actionId+" to go to "+pointerCoords[actionIndex].x+","+pointerCoords[actionIndex].y+")");
-          forbidRecordsOrNull.add(new ForbidRecord(/*index=*/indexForForbidRecord, /*id=*/actionId, /*increment=*/+1));
-        }
-        mFixerState.mForbiddenX[actionId] = pointerCoords[actionIndex].x;
-        mFixerState.mForbiddenY[actionId] = pointerCoords[actionIndex].y;
-        mFixerState.fixCount[actionId] = 0L;
-        // In the case that there was exactly one previous pointer down,
-        // that pointer's forbidden is not known until the end of the next MOVE packet.
-        if (pointerCount == 2) {
-          CHECK_EQ(mFixerState.mWhoNeedsForbidden, -1);
-          mFixerState.mWhoNeedsForbidden = unfixed.getPointerId(1 - actionIndex);
+
+        // CBB: I'm pretty sure the bug can only be initiated when the already-down id is > all the other participating ids.  Not sure exactly how to filter out non-cases of this, though, so not trying, yet.  Well ok, maybe try.
+        boolean allowIt = pointerCount==2 ? actionIndex==0 : actionId < mFixerState.mWhoNeedsForbidden;
+
+        if (allowIt) {
+          if (annotationsOrNull != null) {
+            annotationOrNull.append("(FORBIDDING id "+actionId+" to go to "+pointerCoords[actionIndex].x+","+pointerCoords[actionIndex].y+")");
+            forbidRecordsOrNull.add(new ForbidRecord(/*index=*/indexForForbidRecord, /*id=*/actionId, /*increment=*/+1));
+          }
+          mFixerState.mForbiddenX[actionId] = pointerCoords[actionIndex].x;
+          mFixerState.mForbiddenY[actionId] = pointerCoords[actionIndex].y;
+          mFixerState.fixCount[actionId] = 0L;
+          // In the case that there was exactly one previous pointer down,
+          // that pointer's forbidden is not known until the end of the next MOVE packet.
+          if (pointerCount == 2) {
+            CHECK_EQ(mFixerState.mWhoNeedsForbidden, -1);
+            mFixerState.mWhoNeedsForbidden = unfixed.getPointerId(1 - actionIndex);
+          }
+        } else {
+          annotationOrNull.append("(NOT forbidding id "+actionId+" nor "+unfixed.getPointerId(1-actionIndex)+" because out of order)");
+          forbidRecordsOrNull.add(new ForbidRecord(/*index=*/indexForForbidRecord, /*id=*/actionId, /*increment=*/0));
+          // CBB: abort arming sequence!  argh this sucks, am I now letting things through inconsistently?
         }
       }
     } else if (action == ACTION_MOVE || action == ACTION_POINTER_UP || action == ACTION_UP) {
